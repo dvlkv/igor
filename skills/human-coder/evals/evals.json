@@ -1,0 +1,38 @@
+{
+  "skill_name": "human-coder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Refactor this Python module to remove duplicate validation logic across three functions, keep behavior unchanged, and add unit tests.",
+      "expected_output": "A refactor that centralizes validation logic, reduces duplication, keeps single responsibility boundaries, and includes passing unit tests for unchanged behavior and edge cases.",
+      "files": [],
+      "expectations": [
+        "Validation logic is centralized in a single reusable function or class.",
+        "No duplicated validation branches remain in the three target functions.",
+        "Unit tests cover unchanged behavior and at least one invalid-input case."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Simplify this TypeScript service class that currently handles HTTP transport, retry policy, and business mapping in one class. Split concerns cleanly and keep total code small.",
+      "expected_output": "A separation of transport/retry/business mapping responsibilities with replaceable boundaries and concise implementation, plus unit tests for mapping and retry decisions.",
+      "files": [],
+      "expectations": [
+        "Transport, retry policy, and business mapping are split into separate units.",
+        "Business logic depends on abstractions/interfaces, not concrete transport implementation.",
+        "Unit tests validate mapping logic and retry decision behavior."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I want the smallest safe change to make this Node.js repository testable: replace hard-coded Date.now and DB client calls with injectable dependencies and add unit tests.",
+      "expected_output": "Dependency injection for clock and DB interfaces, minimal code churn, and automated unit tests validating deterministic behavior.",
+      "files": [],
+      "expectations": [
+        "Clock access is injected instead of directly calling Date.now in business logic.",
+        "Database access is injected via an interface or adapter boundary.",
+        "Unit tests run deterministically by controlling time and database behavior."
+      ]
+    }
+  ]
+}

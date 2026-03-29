@@ -1,0 +1,3 @@
+[submodule "submodules/anthropics-skills"]
+	path = submodules/anthropics-skills
+	url = git@github.com:anthropics/skills.git
