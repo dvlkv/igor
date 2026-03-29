@@ -1,10 +1,13 @@
-<img width="256" height="256" align="left" z-index="9999" alt="Igor&#39;s mad scientist experiment" src="https://github.com/user-attachments/assets/64b55ae0-5b95-44ac-a20a-bc3535625d14" />
-
 # Igor
+
+<img width="256" height="256" align="left"  alt="Igor&#39;s mad scientist experiment" src="https://github.com/user-attachments/assets/64b55ae0-5b95-44ac-a20a-bc3535625d14" />
 
 Igor is an autonomous coding agent that acts as your teammate — not a piece of software, but a curated set of tools, prompts, and workflows composed together to form one.
 
-Rather than building a standalone application, Igor takes a different approach: it leverages existing AI-powered coding environments and augments them with carefully crafted prompts, agent skills, MCP integrations, and conventions that turn a general-purpose LLM into a reliable, opinionated engineering partner.
+Rather than building a standalone application, Igor takes a different approach: it leverages existing AI-powered coding environments and augments them with carefully crafted prompts, agent skills, MCP integrations, and conventions that turn a general-purpose LLM into a reliable, opinionated engineering partner.  
+<br/><br />
+
+
 
 ## What Igor is
 
