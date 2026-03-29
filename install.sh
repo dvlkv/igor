@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_DIR="$SCRIPT_DIR/skills"
 
 CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
-CODEX_SKILLS_DIR="$HOME/.codex/skills"
+AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 
 if [ ! -d "$SKILLS_DIR" ]; then
   echo "No skills directory found at $SKILLS_DIR"
@@ -20,7 +20,7 @@ for skill_dir in "$SKILLS_DIR"/*/; do
   skill_name="$(basename "$skill_dir")"
   skill_path="$(cd "$skill_dir" && pwd)"
 
-  for target_dir in "$CLAUDE_SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+  for target_dir in "$CLAUDE_SKILLS_DIR" "$AGENTS_SKILLS_DIR"; do
     mkdir -p "$target_dir"
     link="$target_dir/$skill_name"
 
