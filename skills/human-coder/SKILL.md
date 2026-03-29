@@ -17,11 +17,13 @@ Write the smallest correct solution that remains readable and testable.
 
 1. Read all relevant files.
 2. Define one narrow scope for this change.
-3. Implement the minimum code to solve that scope.
-4. Remove duplication instead of adding parallel logic.
-5. Keep boundaries swappable through interfaces, pure functions, or dependency injection.
-6. Add or update automatic unit tests before finishing.
-7. Run tests and fix failures.
+3. If scope is large (for example full-project review or refactoring), split work into semantically separated tasks and delegate to subagents.
+4. Map touched logic to layers: presentation, domain, infrastructure.
+5. Implement the minimum code to solve that scope, keeping those concerns separated where practical.
+6. Remove duplication instead of adding parallel logic.
+7. Keep boundaries swappable through interfaces, pure functions, or dependency injection.
+8. Add or update automatic unit tests before finishing.
+9. Run tests and fix failures.
 
 ## Rules
 
@@ -32,6 +34,12 @@ Write the smallest correct solution that remains readable and testable.
 5. Do not trust manual checking. Require automated unit tests.
 6. If a change adds complexity, remove at least one equivalent complexity from existing code.
 7. Avoid writing or growing files beyond 500 lines when possible; split by responsibility instead of creating long files.
+8. Separate different types of code whenever practical:
+   - Presentation layer: backend API routes/websockets/interfaces and frontend components/views, including type assessment and input validation.
+   - Domain layer: business logic, business constraints, rules, and algorithms.
+   - Infrastructure layer: database connectors/repositories, third-party integrations, job engines, and similar IO concerns.
+9. Do not impose a new architecture without approval. Follow the existing project structure by default, and only introduce structural changes when the user asks or approves.
+10. For large-scope requests, use subagents and assign each one a semantically distinct task with clear ownership.
 
 ## Decision Rubric
 
@@ -43,6 +51,8 @@ Before finalizing, verify all checks:
 4. Can collaborators replace infrastructure dependencies without rewriting business logic?
 5. Do automated unit tests cover the happy path and at least one edge/failure path?
 6. Can this change keep each touched file under 500 lines without harming clarity?
+7. Are presentation, domain, and infrastructure concerns kept separate without forcing a project-wide restructure?
+8. If the task is large, is it split into semantically distinct subagent tasks with clear ownership?
 
 ## Response Contract
 
