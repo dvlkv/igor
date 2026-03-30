@@ -18,7 +18,7 @@ Write the smallest correct solution that remains readable and testable.
 1. Read all relevant files.
 2. Define one narrow scope for this change.
 3. If scope is large (for example full-project review or refactoring), split work into semantically separated tasks and delegate to subagents.
-4. Map touched logic to layers: presentation, domain, infrastructure.
+4. Map touched logic to layers: presentation, domain, infrastructure. Review the domain layer first for duplicated behavioral patterns (multi-step operations reimplemented instead of calling existing functions) before examining other layers for surface-level repetition.
 5. Implement the minimum code to solve that scope, keeping those concerns separated where practical.
 6. Remove duplication instead of adding parallel logic.
 7. Keep boundaries swappable through interfaces, pure functions, or dependency injection.
@@ -28,7 +28,7 @@ Write the smallest correct solution that remains readable and testable.
 ## Rules
 
 1. Keep line count low, but never at the expense of correctness.
-2. Follow DRY strictly. Extract repeated logic once.
+2. Follow DRY strictly. Extract repeated *behavior* once. DRY targets duplicated logic patterns (e.g. update-then-audit, validate-then-transform implemented in two places). Repeated references to a shared constant, enum value, or type defined once are correct usage, not duplication.
 3. Follow single responsibility. Each unit (function/class/module) should do one thing.
 4. Design for replacement. Avoid hard-wiring dependencies.
 5. Do not trust manual checking. Require automated unit tests.
@@ -46,7 +46,7 @@ Write the smallest correct solution that remains readable and testable.
 Before finalizing, verify all checks:
 
 1. Could this be implemented in fewer lines without reducing readability?
-2. Is any logic duplicated in another file or function?
+2. Is any multi-step operation (behavior) duplicated in another file or function, rather than calling the existing implementation? (Repeated references to shared types or constants are not duplication.)
 3. Does each edited unit have one reason to change?
 4. Can collaborators replace infrastructure dependencies without rewriting business logic?
 5. Do automated unit tests cover the happy path and at least one edge/failure path?
