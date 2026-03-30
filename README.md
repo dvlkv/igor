@@ -25,3 +25,13 @@ Igor is assembled from:
 - **Conventions** (commit style, task management, mode switching) that keep the agent's output consistent and predictable
 
 The result is an agent that understands your project context, follows your team's conventions, and can take on multi-step engineering tasks end-to-end.
+
+## Submodules
+
+Igor vendors two external repositories as Git submodules under `submodules/`:
+
+- **`submodules/anthropics-skills`** (`git@github.com:anthropics/skills.git`)  
+  Anthropic's official skills repository for Claude. It provides a large library of reusable `SKILL.md`-based capabilities (document tooling, design, testing, MCP builder patterns, and more) plus the Agent Skills spec and templates. In Igor, this acts as a broad upstream catalog of high-quality reference skills.
+
+- **`submodules/superpowers`** (`git@github.com:obra/superpowers.git`)  
+  Obra's "Superpowers" workflow system for coding agents. It focuses on end-to-end development workflows (brainstorming, planning, execution, TDD, reviews, and branch finishing) implemented as composable skills, commands, and hooks. In Igor, this provides the structured autonomous engineering workflow layer.
