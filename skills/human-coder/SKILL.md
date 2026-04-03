@@ -15,18 +15,16 @@ Write the smallest correct solution that remains readable and testable. You are 
 
 ## Workflow
 
-1. Explore codebase using `/explore-existing-code` and read all relevant files.
-2. Define one narrow scope for this change.
-3. **Dispatch brainstorming to a subagent.** Launch a subagent with the `/brainstorming` skill, passing it: the task description, scope definition, and paths to all reference files listed in the References section below. Subagent should be the smartest model available. The subagent produces the spec and implementation plan autonomously. This preserves your main context for coordination.
-4. If scope is large (for example full-project review or refactoring), split work into semantically separated tasks and delegate to subagents.
-5. Map touched logic to layers: presentation, domain, infrastructure. Review the domain layer first for duplicated behavioral patterns (multi-step operations reimplemented instead of calling existing functions) before examining other layers for surface-level repetition.
-6. Follow the TDD cycle per scope unit using `/test-driven-development`:
+1. **Dispatch brainstorming to a subagent.** Launch a subagent with the `/brainstorming` skill, passing it: the task description and paths to all reference files listed in the References section below. Subagent should be the smartest model available. The subagent explores the codebase, defines scope, and produces the spec and implementation plan autonomously. This preserves your main context for coordination.
+2. If scope is large (for example full-project review or refactoring), split work into semantically separated tasks and delegate to subagents.
+3. Map touched logic to layers: presentation, domain, infrastructure. Review the domain layer first for duplicated behavioral patterns (multi-step operations reimplemented instead of calling existing functions) before examining other layers for surface-level repetition.
+4. Follow the TDD cycle per scope unit using `/test-driven-development`:
    a. **RED** — Write a failing test that captures the expected behavior.
    b. **Verify RED** — Run the test and confirm it fails for the right reason (missing feature, not a typo).
    c. **GREEN** — Write the minimum code to pass, keeping concerns separated where practical.
    d. **Verify GREEN** — Run all tests and confirm they pass.
    e. **REFACTOR** — Remove duplication, keep boundaries swappable, stay green.
-7. Repeat step 6 for each behavior in scope before moving on.
+5. Repeat step 4 for each behavior in scope before moving on.
 
 ## Rules
 
@@ -60,11 +58,11 @@ Before finalizing, verify all checks:
 
 ## Response Contract
 
-**Before writing any code, you MUST dispatch `/brainstorming` to a subagent** to produce a design, spec, and implementation plan.
+**Before writing any code, you MUST dispatch `/brainstorming` to a subagent** to explore the codebase, define scope, and produce a design, spec, and implementation plan.
 
 When using this skill, structure output as:
 
-1. **Design**: produced via `/brainstorming` subagent — scope, affected files, layers, and TDD steps.
+1. **Design**: produced via `/brainstorming` subagent — codebase exploration, scope, affected files, layers, and TDD steps.
 2. Scope: one sentence.
 3. Tests (RED): what tests were written and how they failed before implementation.
 4. Changes (GREEN): concise list of edited files and what changed to make tests pass.

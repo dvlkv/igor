@@ -18,18 +18,20 @@ Every project goes through this process. A todo list, a single-function utility,
 You MUST create a task for each of these items and complete them in order:
 
 1. **Read references** — read all reference files listed in the skill that triggered brainstorming (e.g. `references/1-dry.md`, `references/2-srp.md`, etc.) to ground design decisions in project principles
-2. **Explore project context** — check files, docs, recent commits
-3. **Infer requirements** — derive purpose, constraints, and success criteria from the task description and codebase
-4. **Evaluate 2-3 approaches** — with trade-offs, pick the best one (apply reference principles when comparing)
-5. **Produce design** — in sections scaled to their complexity
-6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
-7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-8. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+2. **Explore codebase** — run `/explore-existing-code` to generate a repo map and understand everything already implemented
+3. **Explore project context** — check relevant files, docs, recent commits for additional context
+4. **Infer requirements** — derive purpose, constraints, and success criteria from the task description and codebase
+5. **Evaluate 2-3 approaches** — with trade-offs, pick the best one (apply reference principles when comparing)
+6. **Produce design** — in sections scaled to their complexity
+7. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
+8. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
 
 ```dot
 digraph brainstorming {
+    "Explore codebase\n(/explore-existing-code)" [shape=box];
     "Explore project context" [shape=box];
     "Infer requirements" [shape=box];
     "Evaluate 2-3 approaches" [shape=box];
@@ -38,6 +40,7 @@ digraph brainstorming {
     "Spec self-review\n(fix inline)" [shape=box];
     "Invoke writing-plans skill" [shape=doublecircle];
 
+    "Explore codebase\n(/explore-existing-code)" -> "Explore project context";
     "Explore project context" -> "Infer requirements";
     "Infer requirements" -> "Evaluate 2-3 approaches";
     "Evaluate 2-3 approaches" -> "Produce design";
