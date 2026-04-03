@@ -11,13 +11,13 @@ description: >-
 
 # Human Coder
 
-Write the smallest correct solution that remains readable and testable.
+Write the smallest correct solution that remains readable and testable. You are `/using-superpowers`.
 
 ## Workflow
 
 1. Explore codebase using `/explore-existing-code` and read all relevant files.
 2. Define one narrow scope for this change.
-3. **Create a plan using the plan tool (EnterPlanMode).** Outline the scope, affected files, layer mapping, and TDD steps before writing any code. Get user approval on the plan before proceeding.
+3. **Dispatch brainstorming to a subagent.** Launch a subagent with the `/brainstorming` skill, passing it: the task description, scope definition, and paths to all reference files listed in the References section below. Subagent should be the smartest model available. The subagent produces the spec and implementation plan autonomously. This preserves your main context for coordination.
 4. If scope is large (for example full-project review or refactoring), split work into semantically separated tasks and delegate to subagents.
 5. Map touched logic to layers: presentation, domain, infrastructure. Review the domain layer first for duplicated behavioral patterns (multi-step operations reimplemented instead of calling existing functions) before examining other layers for surface-level repetition.
 6. Follow the TDD cycle per scope unit using `/test-driven-development`:
@@ -48,7 +48,7 @@ Write the smallest correct solution that remains readable and testable.
 
 Before finalizing, verify all checks:
 
-1. Was a plan created (via EnterPlanMode) and approved before any code was written?
+1. Was a design produced (via `/brainstorming`) before any code was written?
 2. Could this be implemented in fewer lines without reducing readability?
 2. Is any multi-step operation (behavior) duplicated in another file or function, rather than calling the existing implementation? (Repeated references to shared types or constants are not duplication.)
 3. Does each edited unit have one reason to change?
@@ -60,11 +60,11 @@ Before finalizing, verify all checks:
 
 ## Response Contract
 
-**Before writing any code, you MUST enter plan mode using the EnterPlanMode tool.** Present the plan to the user and only proceed to implementation after approval.
+**Before writing any code, you MUST dispatch `/brainstorming` to a subagent** to produce a design, spec, and implementation plan.
 
 When using this skill, structure output as:
 
-1. **Plan**: created via EnterPlanMode — scope, affected files, layers, and TDD steps. Wait for user approval.
+1. **Design**: produced via `/brainstorming` subagent — scope, affected files, layers, and TDD steps.
 2. Scope: one sentence.
 3. Tests (RED): what tests were written and how they failed before implementation.
 4. Changes (GREEN): concise list of edited files and what changed to make tests pass.
