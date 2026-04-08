@@ -35,3 +35,20 @@ Igor vendors two external repositories as Git submodules under `submodules/`:
 
 - **`submodules/superpowers`** (`git@github.com:obra/superpowers.git`)  
   Obra's "Superpowers" workflow system for coding agents. It focuses on end-to-end development workflows (brainstorming, planning, execution, TDD, reviews, and branch finishing) implemented as composable skills, commands, and hooks. In Igor, this provides the structured autonomous engineering workflow layer.
+
+## Memory
+
+Igor uses [mempalace](git@github.com:milla-jovovich/mempalace.git) for persistent memory management.
+
+## Setup
+
+```bash
+./setup.sh
+```
+
+This will:
+1. Initialize git submodules
+2. Install mempalace via pip
+3. Initialize mempalace in the project
+4. Register the mempalace MCP server for Claude
+5. Symlink all skills to `~/.claude/skills` and `~/.agents/skills`
