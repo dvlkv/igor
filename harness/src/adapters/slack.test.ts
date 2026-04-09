@@ -6,7 +6,7 @@ vi.mock("@slack/bolt", () => {
     start: vi.fn(),
     stop: vi.fn(),
   };
-  return { App: vi.fn(() => app) };
+  return { App: vi.fn(function () { return app; }) };
 });
 
 import { SlackAdapter } from "./slack.js";

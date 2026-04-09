@@ -12,7 +12,10 @@ vi.mock("grammy", () => {
       deleteMessage: vi.fn().mockResolvedValue(true),
     },
   };
-  return { Bot: vi.fn(() => bot) };
+  return {
+    Bot: vi.fn(function () { return bot; }),
+    InlineKeyboard: vi.fn(function () { return { text: vi.fn().mockReturnThis() }; }),
+  };
 });
 
 import { TelegramAdapter } from "./telegram.js";

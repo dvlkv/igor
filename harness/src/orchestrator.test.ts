@@ -8,40 +8,46 @@ import type {
 
 vi.mock("./state.js", () => {
   return {
-    StateStore: vi.fn().mockImplementation(() => ({
-      save: vi.fn(),
-      get: vi.fn(),
-      update: vi.fn(),
-      getAll: vi.fn().mockReturnValue([]),
-      getActive: vi.fn().mockReturnValue([]),
-      findByTelegramThread: vi.fn(),
-    })),
+    StateStore: vi.fn().mockImplementation(function () {
+      return {
+        save: vi.fn(),
+        get: vi.fn(),
+        update: vi.fn(),
+        getAll: vi.fn().mockReturnValue([]),
+        getActive: vi.fn().mockReturnValue([]),
+        findByTelegramThread: vi.fn(),
+      };
+    }),
   };
 });
 
 vi.mock("./session-manager.js", () => {
   return {
-    ClaudeSessionManager: vi.fn().mockImplementation(() => ({
-      createSession: vi.fn().mockResolvedValue(12345),
-      killSession: vi.fn().mockResolvedValue(undefined),
-      isAlive: vi.fn().mockReturnValue(false),
-      listSessions: vi.fn().mockReturnValue([]),
-      killAll: vi.fn().mockResolvedValue(undefined),
-      sendMessage: vi.fn().mockReturnValue(true),
-      onOutput: vi.fn(),
-      onToolUse: vi.fn(),
-    })),
+    ClaudeSessionManager: vi.fn().mockImplementation(function () {
+      return {
+        createSession: vi.fn().mockResolvedValue(12345),
+        killSession: vi.fn().mockResolvedValue(undefined),
+        isAlive: vi.fn().mockReturnValue(false),
+        listSessions: vi.fn().mockReturnValue([]),
+        killAll: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockReturnValue(true),
+        onOutput: vi.fn(),
+        onToolUse: vi.fn(),
+      };
+    }),
   };
 });
 
 vi.mock("./memory-ingestion.js", () => {
   return {
-    MemoryIngestion: vi.fn().mockImplementation(() => ({
-      buffer: vi.fn(),
-      flush: vi.fn().mockResolvedValue(undefined),
-      start: vi.fn(),
-      stop: vi.fn(),
-    })),
+    MemoryIngestion: vi.fn().mockImplementation(function () {
+      return {
+        buffer: vi.fn(),
+        flush: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+    }),
   };
 });
 
