@@ -135,7 +135,7 @@ export class TelegramAdapter implements ChannelAdapter {
     );
     const opts =
       threadId !== "general"
-        ? { reply_parameters: { message_id: Number(threadId) } }
+        ? { message_thread_id: Number(threadId) }
         : {};
     try {
       const result = await this.bot.api.sendMessage(
@@ -177,11 +177,11 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async createThread(title: string): Promise<string> {
-    const result = await this.bot.api.sendMessage(
+    const result = await this.bot.api.createForumTopic(
       this.config.ownerChatId,
-      title,
+      title.slice(0, 128),
     );
-    return String(result.message_id);
+    return String(result.message_thread_id);
   }
 
   async sendPermissionPrompt(req: PermissionPrompt): Promise<void> {

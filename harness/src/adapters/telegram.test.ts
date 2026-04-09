@@ -10,6 +10,7 @@ vi.mock("grammy", () => {
       sendMessage: vi.fn().mockResolvedValue({ message_id: 42 }),
       editMessageText: vi.fn().mockResolvedValue(true),
       deleteMessage: vi.fn().mockResolvedValue(true),
+      createForumTopic: vi.fn().mockResolvedValue({ message_thread_id: 99, name: "Test" }),
     },
   };
   return {
@@ -30,17 +31,47 @@ describe("TelegramAdapter", () => {
     expect(adapter.name).toBe("telegram");
   });
 
-  it("creates a thread by sending root message and returns message_id as string", async () => {
+  it("creates a forum topic and returns message_thread_id as string", async () => {
     const adapter = new TelegramAdapter({
       botToken: "test-token",
       ownerChatId: 123,
     });
     const threadId = await adapter.createThread("Test Thread");
-    expect(threadId).toBe("42");
+    expect(threadId).toBe("99");
 
     const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
       .value;
-    expect(bot.api.sendMessage).toHaveBeenCalledWith(123, "Test Thread");
+    expect(bot.api.createForumTopic).toHaveBeenCalledWith(123, "Test Thread");
+  });
+
+  it("truncates forum topic name to 128 characters", async () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+    const longTitle = "A".repeat(200);
+    await adapter.createThread(longTitle);
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    expect(bot.api.createForumTopic).toHaveBeenCalledWith(
+      123,
+      "A".repeat(128),
+    );
+  });
+
+  it("sendMessage uses message_thread_id for non-general threads", async () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+    await adapter.sendMessage("99", "Hello topic");
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    expect(bot.api.sendMessage).toHaveBeenCalledWith(123, "Hello topic", {
+      message_thread_id: 99,
+    });
   });
 
   it("sendMessage returns the message_id", async () => {
