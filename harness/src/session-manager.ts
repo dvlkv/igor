@@ -113,7 +113,9 @@ export class ClaudeSessionManager {
     );
 
     // Send the initial prompt via stdin in stream-json format
-    this.writeToStdin(sessionName, opts.prompt);
+    if (opts.prompt) {
+      this.writeToStdin(sessionName, opts.prompt);
+    }
 
     return child.pid!;
   }
