@@ -8,39 +8,46 @@ import type {
 
 vi.mock("./state.js", () => {
   return {
-    StateStore: vi.fn().mockImplementation(() => ({
-      save: vi.fn(),
-      get: vi.fn(),
-      update: vi.fn(),
-      getAll: vi.fn().mockReturnValue([]),
-      getActive: vi.fn().mockReturnValue([]),
-      findByTelegramThread: vi.fn(),
-    })),
+    StateStore: vi.fn().mockImplementation(function () {
+      return {
+        save: vi.fn(),
+        get: vi.fn(),
+        update: vi.fn(),
+        getAll: vi.fn().mockReturnValue([]),
+        getActive: vi.fn().mockReturnValue([]),
+        findByTelegramThread: vi.fn(),
+      };
+    }),
   };
 });
 
 vi.mock("./session-manager.js", () => {
   return {
-    ClaudeSessionManager: vi.fn().mockImplementation(() => ({
-      createSession: vi.fn().mockResolvedValue(12345),
-      killSession: vi.fn().mockResolvedValue(undefined),
-      isAlive: vi.fn().mockReturnValue(false),
-      listSessions: vi.fn().mockReturnValue([]),
-      killAll: vi.fn().mockResolvedValue(undefined),
-      sendMessage: vi.fn().mockReturnValue(true),
-      onOutput: vi.fn(),
-    })),
+    ClaudeSessionManager: vi.fn().mockImplementation(function () {
+      return {
+        createSession: vi.fn().mockResolvedValue(12345),
+        killSession: vi.fn().mockResolvedValue(undefined),
+        isAlive: vi.fn().mockReturnValue(false),
+        listSessions: vi.fn().mockReturnValue([]),
+        killAll: vi.fn().mockResolvedValue(undefined),
+        sendMessage: vi.fn().mockReturnValue(true),
+        onOutput: vi.fn(),
+        onToolUse: vi.fn(),
+      };
+    }),
   };
 });
 
 vi.mock("./memory-ingestion.js", () => {
   return {
-    MemoryIngestion: vi.fn().mockImplementation(() => ({
-      buffer: vi.fn(),
-      flush: vi.fn().mockResolvedValue(undefined),
-      start: vi.fn(),
-      stop: vi.fn(),
-    })),
+    MemoryIngestion: vi.fn().mockImplementation(function () {
+      return {
+        buffer: vi.fn(),
+        flush: vi.fn().mockResolvedValue(undefined),
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+    }),
   };
 });
 
@@ -77,7 +84,7 @@ function createMockAdapter(name: string) {
     onTaskAssigned: vi.fn((handler: TaskHandler) => {
       taskHandler = handler;
     }),
-    sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendMessage: vi.fn().mockResolvedValue(100),
     createThread: vi.fn().mockResolvedValue("thread-123"),
     fireMessage(msg: IncomingMessage) {
       messageHandler?.(msg);
@@ -97,6 +104,8 @@ function createMockTelegramAdapter() {
     onClear: vi.fn(),
     onPermissionResponse: vi.fn(),
     sendPermissionPrompt: vi.fn().mockResolvedValue(undefined),
+    editMessage: vi.fn().mockResolvedValue(undefined),
+    deleteMessage: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -262,8 +271,126 @@ describe("Orchestrator", () => {
     outputCallback!("igor-general", "Hi there!");
 
     expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
-      "320784056",
+      "general",
       "Hi there!",
+    );
+  });
+
+  it("sends progress message on first tool_use and edits on subsequent", async () => {
+    let outputCallback: ((sessionId: string, text: string) => void) | undefined;
+    let toolUseCallback:
+      | ((sessionId: string, toolName: string) => void)
+      | undefined;
+
+    (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
+      (handler: (sessionId: string, text: string) => void) => {
+        outputCallback = handler;
+      },
+    );
+    (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+      (handler: (sessionId: string, toolName: string) => void) => {
+        toolUseCallback = handler;
+      },
+    );
+    (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      stateStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Set reply context
+    telegramAdapter.fireMessage({
+      channelType: "telegram",
+      threadId: "general",
+      text: "Hello",
+      author: "user",
+      metadata: { chat_id: "320784056" },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // First tool_use: should send a new progress message
+    toolUseCallback!("igor-general", "Bash");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
+      "general",
+      "⚙️ _Running command..._",
+    );
+
+    // Second tool_use: should edit the existing progress message
+    toolUseCallback!("igor-general", "Read");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(telegramAdapter.editMessage).toHaveBeenCalledWith(
+      "general",
+      100,
+      "⚙️ _Reading files..._",
+    );
+  });
+
+  it("deletes progress message and sends result as new message", async () => {
+    let outputCallback: ((sessionId: string, text: string) => void) | undefined;
+    let toolUseCallback:
+      | ((sessionId: string, toolName: string) => void)
+      | undefined;
+
+    (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
+      (handler: (sessionId: string, text: string) => void) => {
+        outputCallback = handler;
+      },
+    );
+    (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+      (handler: (sessionId: string, toolName: string) => void) => {
+        toolUseCallback = handler;
+      },
+    );
+    (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      stateStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Set reply context
+    telegramAdapter.fireMessage({
+      channelType: "telegram",
+      threadId: "general",
+      text: "Hello",
+      author: "user",
+      metadata: { chat_id: "320784056" },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Send a tool_use first
+    toolUseCallback!("igor-general", "Bash");
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Reset mocks to isolate result behavior
+    (telegramAdapter.sendMessage as ReturnType<typeof vi.fn>).mockClear();
+    (telegramAdapter.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue(200);
+
+    // Now the result comes in
+    outputCallback!("igor-general", "Here is your answer");
+
+    expect(telegramAdapter.deleteMessage).toHaveBeenCalledWith(100);
+    expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
+      "general",
+      "Here is your answer",
     );
   });
 

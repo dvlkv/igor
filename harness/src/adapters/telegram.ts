@@ -126,17 +126,53 @@ export class TelegramAdapter implements ChannelAdapter {
     this.permissionResponseHandler = handler;
   }
 
-  async sendMessage(threadId: string, text: string): Promise<void> {
-    console.log(`[telegram:send] threadId="${threadId}" ownerChatId=${this.config.ownerChatId} text="${text.slice(0, 100)}"`);
+  async sendMessage(
+    threadId: string,
+    text: string,
+  ): Promise<number | undefined> {
+    console.log(
+      `[telegram:send] threadId="${threadId}" ownerChatId=${this.config.ownerChatId} text="${text.slice(0, 100)}"`,
+    );
     const opts =
       threadId !== "general"
         ? { reply_parameters: { message_id: Number(threadId) } }
         : {};
     try {
-      await this.bot.api.sendMessage(this.config.ownerChatId, text, opts);
+      const result = await this.bot.api.sendMessage(
+        this.config.ownerChatId,
+        text,
+        opts,
+      );
       console.log(`[telegram:send] message sent successfully`);
+      return result.message_id;
     } catch (err: any) {
       console.log(`[telegram:send] ERROR: ${err.message}`);
+      return undefined;
+    }
+  }
+
+  async editMessage(
+    threadId: string,
+    messageId: number,
+    text: string,
+  ): Promise<void> {
+    try {
+      await this.bot.api.editMessageText(
+        this.config.ownerChatId,
+        messageId,
+        text,
+        { parse_mode: "Markdown" },
+      );
+    } catch (err: any) {
+      console.log(`[telegram:edit] ERROR: ${err.message}`);
+    }
+  }
+
+  async deleteMessage(messageId: number): Promise<void> {
+    try {
+      await this.bot.api.deleteMessage(this.config.ownerChatId, messageId);
+    } catch (err: any) {
+      console.log(`[telegram:delete] ERROR: ${err.message}`);
     }
   }
 

@@ -141,6 +141,39 @@ describe("ClaudeSessionManager", () => {
     expect(pid).toBe(42);
   });
 
+  it("emits tool_use events via onToolUse callback", async () => {
+    const mockProc = createMockProcess();
+    spawnMock.mockReturnValue(mockProc as any);
+
+    const toolUses: Array<{ sessionId: string; toolName: string }> = [];
+    manager.onToolUse((sessionId, toolName) => {
+      toolUses.push({ sessionId, toolName });
+    });
+
+    await manager.createSession({
+      name: "test-session",
+      worktreePath: "/tmp/work",
+      prompt: "hello",
+    });
+
+    // Simulate Claude assistant event with tool_use
+    const assistantEvent = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", name: "Bash", input: { command: "ls" } },
+          { type: "tool_use", name: "Read", input: { file_path: "/tmp/x" } },
+        ],
+      },
+    });
+    mockProc.stdout.emit("data", Buffer.from(assistantEvent + "\n"));
+
+    expect(toolUses).toEqual([
+      { sessionId: "test-session", toolName: "Bash" },
+      { sessionId: "test-session", toolName: "Read" },
+    ]);
+  });
+
   it("sends follow-up messages via stdin", async () => {
     const mockProc = createMockProcess();
     spawnMock.mockReturnValue(mockProc as any);
