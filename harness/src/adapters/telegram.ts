@@ -18,16 +18,11 @@ export interface TelegramConfig {
   ownerChatId: number;
 }
 
-/** Bot commands registered with Telegram on startup. Single source of truth. */
-const BOT_COMMANDS: Array<{ command: string; description: string }> = [
-  { command: "task", description: "Create a new task — /task Title" },
-  { command: "clear", description: "Clear and restart the general session" },
-];
-
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram";
   private bot: Bot;
   private config: TelegramConfig;
+  private commands: Array<{ command: string; description: string }> = [];
   private messageHandlers: Array<(msg: IncomingMessage) => void> = [];
   private taskHandlers: Array<(task: TaskAssignment) => void> = [];
   private clearHandlers: Array<() => void> = [];
@@ -37,34 +32,53 @@ export class TelegramAdapter implements ChannelAdapter {
     behavior: "allow" | "deny",
   ) => void;
 
+  /** Register a bot command: sets up the grammY handler AND adds it to the
+   *  command list that gets pushed to Telegram via setMyCommands on startup. */
+  private registerCommand(
+    command: string,
+    description: string,
+    handler: Parameters<Bot["command"]>[1],
+  ): void {
+    this.commands.push({ command, description });
+    this.bot.command(command, handler);
+  }
+
   constructor(config: TelegramConfig) {
     this.config = config;
     this.bot = new Bot(config.botToken);
 
-    this.bot.command("clear", (ctx) => {
-      for (const handler of this.clearHandlers) {
-        handler();
-      }
-      ctx.reply("General session cleared.");
-    });
+    this.registerCommand(
+      "clear",
+      "Clear and restart the general session",
+      (ctx) => {
+        for (const handler of this.clearHandlers) {
+          handler();
+        }
+        ctx.reply("General session cleared.");
+      },
+    );
 
-    this.bot.command("task", (ctx) => {
-      const text = ctx.message?.text ?? "";
-      const withoutCommand = text.replace(/^\/task\s*/, "");
-      const [title, ...rest] = withoutCommand.split("\n");
-      const description = rest.join("\n").trim();
+    this.registerCommand(
+      "task",
+      "Create a new task — /task Title",
+      (ctx) => {
+        const text = ctx.message?.text ?? "";
+        const withoutCommand = text.replace(/^\/task\s*/, "");
+        const [title, ...rest] = withoutCommand.split("\n");
+        const description = rest.join("\n").trim();
 
-      const task: TaskAssignment = {
-        source: "telegram",
-        taskId: String(ctx.message?.message_id ?? Date.now()),
-        title: title.trim(),
-        description,
-      };
+        const task: TaskAssignment = {
+          source: "telegram",
+          taskId: String(ctx.message?.message_id ?? Date.now()),
+          title: title.trim(),
+          description,
+        };
 
-      for (const handler of this.taskHandlers) {
-        handler(task);
-      }
-    });
+        for (const handler of this.taskHandlers) {
+          handler(task);
+        }
+      },
+    );
 
     // Handle permission relay callback queries
     this.bot.on("callback_query:data", async (ctx) => {
@@ -205,9 +219,9 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
-    await this.bot.api.setMyCommands(BOT_COMMANDS);
+    await this.bot.api.setMyCommands(this.commands);
     console.log(
-      `[telegram] registered ${BOT_COMMANDS.length} bot commands: ${BOT_COMMANDS.map((c) => `/${c.command}`).join(", ")}`,
+      `[telegram] registered ${this.commands.length} bot commands: ${this.commands.map((c) => `/${c.command}`).join(", ")}`,
     );
     await this.bot.start();
   }
