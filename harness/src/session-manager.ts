@@ -4,14 +4,32 @@ import type { SessionManagerOptions } from "./types.js";
 export class ClaudeSessionManager {
   private processes = new Map<string, ChildProcess>();
   private outputHandler?: (sessionId: string, text: string) => void;
-  private toolUseHandler?: (sessionId: string, toolName: string) => void;
+  private toolUseHandler?: (
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ) => void;
+  private assistantTextHandler?: (
+    sessionId: string,
+    text: string,
+  ) => void;
 
   onOutput(handler: (sessionId: string, text: string) => void): void {
     this.outputHandler = handler;
   }
 
-  onToolUse(handler: (sessionId: string, toolName: string) => void): void {
+  onToolUse(
+    handler: (
+      sessionId: string,
+      toolName: string,
+      input: Record<string, unknown>,
+    ) => void,
+  ): void {
     this.toolUseHandler = handler;
+  }
+
+  onAssistantText(handler: (sessionId: string, text: string) => void): void {
+    this.assistantTextHandler = handler;
   }
 
   async createSession(opts: SessionManagerOptions): Promise<number> {
@@ -73,11 +91,12 @@ export class ClaudeSessionManager {
                 console.log(
                   `[${sessionName}:stdout] assistant: ${block.text.slice(0, 200)}`,
                 );
+                this.assistantTextHandler?.(sessionName, block.text);
               } else if (block.type === "tool_use") {
                 console.log(
                   `[${sessionName}:stdout] tool_use: ${block.name}(${JSON.stringify(block.input).slice(0, 150)})`,
                 );
-                this.toolUseHandler?.(sessionName, block.name);
+                this.toolUseHandler?.(sessionName, block.name, block.input);
               }
             }
           } else if (event.type === "result" && event.result) {
