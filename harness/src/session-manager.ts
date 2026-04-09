@@ -1,64 +1,33 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import type { SessionManagerOptions } from "./types.js";
-
-export interface ClaudeSessionManagerOptions {
-  bridgeWsPort: number;
-  channelBridgePath: string;
-}
 
 export class ClaudeSessionManager {
   private processes = new Map<string, ChildProcess>();
-  private configPaths = new Map<string, string>();
-  private bridgeWsPort: number;
-  private channelBridgePath: string;
+  private outputHandler?: (sessionId: string, text: string) => void;
 
-  constructor(opts: ClaudeSessionManagerOptions) {
-    this.bridgeWsPort = opts.bridgeWsPort;
-    this.channelBridgePath = opts.channelBridgePath;
+  onOutput(handler: (sessionId: string, text: string) => void): void {
+    this.outputHandler = handler;
   }
 
   async createSession(opts: SessionManagerOptions): Promise<number> {
     if (this.processes.has(opts.name) && this.isAlive(opts.name)) {
-      console.log(`[session] "${opts.name}" already running (pid=${this.processes.get(opts.name)!.pid})`);
+      console.log(
+        `[session] "${opts.name}" already running (pid=${this.processes.get(opts.name)!.pid})`,
+      );
       return this.processes.get(opts.name)!.pid!;
     }
 
-    console.log(`[session] creating "${opts.name}" cwd="${opts.worktreePath}" prompt="${opts.prompt.slice(0, 100)}"`);
+    console.log(
+      `[session] creating "${opts.name}" cwd="${opts.worktreePath}" prompt="${opts.prompt.slice(0, 100)}"`,
+    );
 
-    // Write per-session MCP config
-    const configDir = join(tmpdir(), "harness-mcp");
-    mkdirSync(configDir, { recursive: true });
-    const configPath = join(configDir, `${opts.name}.json`);
-    const mcpConfig = {
-      mcpServers: {
-        harness: {
-          command: "node",
-          args: [this.channelBridgePath],
-          env: {
-            SESSION_ID: opts.name,
-            BRIDGE_WS_URL: `ws://127.0.0.1:${this.bridgeWsPort}`,
-          },
-        },
-      },
-    };
-    writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
-    this.configPaths.set(opts.name, configPath);
-    console.log(`[session] MCP config written to ${configPath}`);
-    console.log(`[session] channelBridgePath=${this.channelBridgePath} bridgeWsPort=${this.bridgeWsPort}`);
-
-    // Use stream-json input/output without --print so Claude stays alive
-    // reading from stdin. Initial prompt is sent via stdin after spawn.
-    // (Matches the approach from github.com/slopus/happy SDK)
     const args: string[] = [
-      "--output-format", "stream-json",
+      "--output-format",
+      "stream-json",
       "--verbose",
-      "--input-format", "stream-json",
-      "--mcp-config", configPath,
+      "--input-format",
+      "stream-json",
       "--dangerously-skip-permissions",
-      "--dangerously-load-development-channels", "server:harness",
     ];
 
     if (opts.systemPrompt) {
@@ -77,36 +46,42 @@ export class ClaudeSessionManager {
       env: { ...process.env },
     });
 
-    this.processes.set(opts.name, child);
+    const sessionName = opts.name;
+    this.processes.set(sessionName, child);
 
-    console.log(`[session] "${opts.name}" spawned: pid=${child.pid} stdin=${!!child.stdin} stdout=${!!child.stdout} stderr=${!!child.stderr}`);
+    console.log(
+      `[session] "${sessionName}" spawned: pid=${child.pid}`,
+    );
 
     child.on("error", (err) => {
-      console.log(`[session] "${opts.name}" spawn error: ${err.message}`);
+      console.log(`[session] "${sessionName}" spawn error: ${err.message}`);
     });
 
     child.stdout?.on("data", (data: Buffer) => {
       const lines = data.toString().split("\n").filter(Boolean);
       for (const line of lines) {
-        // Log every line raw first for debugging
-        console.log(`[${opts.name}:stdout:raw] ${line.slice(0, 500)}`);
         try {
           const event = JSON.parse(line);
           if (event.type === "assistant" && event.message?.content) {
             for (const block of event.message.content) {
               if (block.type === "text") {
-                console.log(`[${opts.name}:stdout] assistant text: ${block.text.slice(0, 200)}`);
+                console.log(
+                  `[${sessionName}:stdout] assistant: ${block.text.slice(0, 200)}`,
+                );
               } else if (block.type === "tool_use") {
-                console.log(`[${opts.name}:stdout] tool_use: ${block.name}(${JSON.stringify(block.input).slice(0, 150)})`);
+                console.log(
+                  `[${sessionName}:stdout] tool_use: ${block.name}(${JSON.stringify(block.input).slice(0, 150)})`,
+                );
               }
             }
-          } else if (event.type === "result") {
-            console.log(`[${opts.name}:stdout] result: ${JSON.stringify(event).slice(0, 200)}`);
-          } else {
-            console.log(`[${opts.name}:stdout] event type="${event.type}"`);
+          } else if (event.type === "result" && event.result) {
+            console.log(
+              `[${sessionName}:stdout] result: ${String(event.result).slice(0, 200)}`,
+            );
+            this.outputHandler?.(sessionName, event.result);
           }
         } catch {
-          // Non-JSON, already logged raw above
+          // non-JSON line, ignore
         }
       }
     });
@@ -115,25 +90,24 @@ export class ClaudeSessionManager {
       const text = data.toString().trimEnd();
       if (text) {
         for (const line of text.split("\n")) {
-          console.log(`[${opts.name}:stderr] ${line}`);
+          console.log(`[${sessionName}:stderr] ${line}`);
         }
       }
     });
 
     child.on("exit", (code, signal) => {
       console.log(
-        `Session "${opts.name}" exited (code=${code}, signal=${signal})`,
+        `Session "${sessionName}" exited (code=${code}, signal=${signal})`,
       );
-      this.processes.delete(opts.name);
-      this.cleanupConfig(opts.name);
+      this.processes.delete(sessionName);
     });
 
     console.log(
-      `Session "${opts.name}" started (pid=${child.pid}, cwd=${opts.worktreePath})`,
+      `Session "${sessionName}" started (pid=${child.pid}, cwd=${opts.worktreePath})`,
     );
 
     // Send the initial prompt via stdin in stream-json format
-    this.writeToStdin(opts.name, opts.prompt);
+    this.writeToStdin(sessionName, opts.prompt);
 
     return child.pid!;
   }
@@ -163,7 +137,6 @@ export class ClaudeSessionManager {
     const proc = this.processes.get(name);
     if (proc) {
       proc.kill("SIGTERM");
-      // Give it a moment to shut down gracefully
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           if (proc.exitCode === null) {
@@ -177,7 +150,6 @@ export class ClaudeSessionManager {
         });
       });
       this.processes.delete(name);
-      this.cleanupConfig(name);
     }
   }
 
@@ -192,18 +164,6 @@ export class ClaudeSessionManager {
 
   getPid(name: string): number | undefined {
     return this.processes.get(name)?.pid ?? undefined;
-  }
-
-  private cleanupConfig(name: string): void {
-    const configPath = this.configPaths.get(name);
-    if (configPath) {
-      try {
-        unlinkSync(configPath);
-      } catch {
-        // ignore
-      }
-      this.configPaths.delete(name);
-    }
   }
 
   async killAll(): Promise<void> {

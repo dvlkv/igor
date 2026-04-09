@@ -27,20 +27,8 @@ vi.mock("./session-manager.js", () => {
       isAlive: vi.fn().mockReturnValue(false),
       listSessions: vi.fn().mockReturnValue([]),
       killAll: vi.fn().mockResolvedValue(undefined),
-    })),
-  };
-});
-
-vi.mock("./bridge-server.js", () => {
-  return {
-    BridgeServer: vi.fn().mockImplementation(() => ({
-      sendToSession: vi.fn().mockReturnValue(true),
-      sendPermissionResponse: vi.fn(),
-      onReply: vi.fn(),
-      onPermissionRequest: vi.fn(),
-      isSessionConnected: vi.fn().mockReturnValue(false),
-      disconnectSession: vi.fn(),
-      close: vi.fn(),
+      sendMessage: vi.fn().mockReturnValue(true),
+      onOutput: vi.fn(),
     })),
   };
 });
@@ -67,7 +55,6 @@ vi.mock("node:child_process", () => {
 import { Orchestrator } from "./orchestrator.js";
 import { StateStore } from "./state.js";
 import { ClaudeSessionManager } from "./session-manager.js";
-import { BridgeServer } from "./bridge-server.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 
 type MessageHandler = (msg: IncomingMessage) => void;
@@ -116,7 +103,6 @@ function createMockTelegramAdapter() {
 describe("Orchestrator", () => {
   let stateStore: InstanceType<typeof StateStore>;
   let sessionManager: InstanceType<typeof ClaudeSessionManager>;
-  let bridgeServer: InstanceType<typeof BridgeServer>;
   let memoryIngestion: InstanceType<typeof MemoryIngestion>;
   let telegramAdapter: ReturnType<typeof createMockTelegramAdapter>;
   let linearAdapter: ReturnType<typeof createMockAdapter>;
@@ -124,11 +110,7 @@ describe("Orchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stateStore = new StateStore("/tmp/test-state.json");
-    sessionManager = new ClaudeSessionManager({
-      bridgeWsPort: 9100,
-      channelBridgePath: "./channel-bridge.js",
-    });
-    bridgeServer = new BridgeServer(9100);
+    sessionManager = new ClaudeSessionManager();
     memoryIngestion = new MemoryIngestion({
       bufferDir: "/tmp/buffers",
       ingestIntervalMs: 60000,
@@ -143,7 +125,6 @@ describe("Orchestrator", () => {
       telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
-      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
@@ -172,7 +153,7 @@ describe("Orchestrator", () => {
     expect(savedSession.claudePid).toBe(12345);
   });
 
-  it("routes telegram message to correct session via bridge", async () => {
+  it("routes telegram message to session via stdin", async () => {
     const mockSession: TaskSession = {
       taskId: "LIN-123",
       source: "linear",
@@ -188,13 +169,13 @@ describe("Orchestrator", () => {
     (
       stateStore.findByTelegramThread as ReturnType<typeof vi.fn>
     ).mockReturnValue(mockSession);
+    (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
-      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
@@ -211,26 +192,20 @@ describe("Orchestrator", () => {
 
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(bridgeServer.sendToSession).toHaveBeenCalledWith("LIN-123", {
-      type: "message",
-      content: "Please also fix the typo",
-      meta: {
-        adapter: "telegram",
-        chat_id: "320784056",
-        message_id: "789",
-        user: "user",
-        thread_id: "thread-456",
-      },
-    });
+    expect(sessionManager.sendMessage).toHaveBeenCalledWith(
+      "LIN-123",
+      "Please also fix the typo",
+    );
   });
 
-  it("routes general telegram messages to general session", () => {
+  it("routes general telegram messages to general session via stdin", async () => {
+    (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
-      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
@@ -245,12 +220,50 @@ describe("Orchestrator", () => {
       metadata: { chat_id: "320784056" },
     });
 
-    expect(bridgeServer.sendToSession).toHaveBeenCalledWith(
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(sessionManager.sendMessage).toHaveBeenCalledWith(
       "igor-general",
-      expect.objectContaining({
-        type: "message",
-        content: "Hello world",
-      }),
+      "Hello world",
+    );
+  });
+
+  it("routes claude output back to adapter", () => {
+    let outputCallback: ((sessionId: string, text: string) => void) | undefined;
+    (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
+      (handler: (sessionId: string, text: string) => void) => {
+        outputCallback = handler;
+      },
+    );
+
+    (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      stateStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Send a message to set the reply context
+    telegramAdapter.fireMessage({
+      channelType: "telegram",
+      threadId: "general",
+      text: "Hello",
+      author: "user",
+      metadata: { chat_id: "320784056" },
+    });
+
+    // Simulate Claude responding
+    outputCallback!("igor-general", "Hi there!");
+
+    expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
+      "320784056",
+      "Hi there!",
     );
   });
 
@@ -260,7 +273,6 @@ describe("Orchestrator", () => {
       telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
-      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",

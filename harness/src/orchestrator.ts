@@ -4,12 +4,9 @@ import type {
   IncomingMessage,
   TaskAssignment,
   TaskSession,
-  BridgeReply,
-  BridgePermissionRequest,
 } from "./types.js";
 import { StateStore } from "./state.js";
 import { ClaudeSessionManager } from "./session-manager.js";
-import { BridgeServer } from "./bridge-server.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import type { TelegramAdapter } from "./adapters/telegram.js";
 
@@ -18,7 +15,6 @@ export interface OrchestratorOptions {
   telegram?: TelegramAdapter;
   stateStore: StateStore;
   sessionManager: ClaudeSessionManager;
-  bridgeServer: BridgeServer;
   memoryIngestion: MemoryIngestion;
   worktreeDir: string;
   generalProjectDir: string;
@@ -45,19 +41,21 @@ export class Orchestrator {
   private telegram?: TelegramAdapter;
   private stateStore: StateStore;
   private sessionManager: ClaudeSessionManager;
-  private bridgeServer: BridgeServer;
   private memoryIngestion: MemoryIngestion;
   private worktreeDir: string;
   private generalProjectDir: string;
   private generalClaudeArgs: string[];
   private generalSystemPrompt?: string;
+  private replyContext = new Map<
+    string,
+    { adapter: string; threadId: string }
+  >();
 
   constructor(opts: OrchestratorOptions) {
     this.adapters = opts.adapters;
     this.telegram = opts.telegram;
     this.stateStore = opts.stateStore;
     this.sessionManager = opts.sessionManager;
-    this.bridgeServer = opts.bridgeServer;
     this.memoryIngestion = opts.memoryIngestion;
     this.worktreeDir = opts.worktreeDir;
     this.generalProjectDir = opts.generalProjectDir;
@@ -69,26 +67,23 @@ export class Orchestrator {
       adapter.onTaskAssigned((task) => this.handleTaskAssignment(task));
     }
 
-    // Wire bridge replies back to adapters
-    this.bridgeServer.onReply((_sessionId, reply) => {
-      this.handleReply(reply);
+    // Route Claude JSON output back to adapters
+    this.sessionManager.onOutput((sessionId, text) => {
+      const ctx = this.replyContext.get(sessionId);
+      if (ctx) {
+        console.log(
+          `[output] session="${sessionId}" → ${ctx.adapter} thread="${ctx.threadId}" text="${text.slice(0, 200)}"`,
+        );
+        const adapter = this.adapters.find((a) => a.name === ctx.adapter);
+        if (adapter?.sendMessage) {
+          void adapter.sendMessage(ctx.threadId, text);
+        }
+      } else {
+        console.log(
+          `[output] session="${sessionId}" — no reply context, dropping`,
+        );
+      }
     });
-
-    // Wire permission requests from bridge to Telegram
-    this.bridgeServer.onPermissionRequest((req) => {
-      this.handlePermissionRequest(req);
-    });
-
-    // Wire Telegram permission responses back to bridge
-    if (this.telegram) {
-      this.telegram.onPermissionResponse((sessionId, requestId, behavior) => {
-        this.bridgeServer.sendPermissionResponse(sessionId, {
-          type: "permission_response",
-          requestId,
-          behavior,
-        });
-      });
-    }
   }
 
   async startGeneralSession(): Promise<void> {
@@ -99,20 +94,33 @@ export class Orchestrator {
     await this.sessionManager.createSession({
       name: Orchestrator.GENERAL_SESSION,
       worktreePath: this.generalProjectDir,
-      prompt: "Session initialized. Awaiting channel messages.",
+      prompt: "Session initialized. Awaiting messages.",
       systemPrompt: this.generalSystemPrompt,
       claudeArgs: this.generalClaudeArgs,
     });
     console.log("General session started");
+
+    if (this.telegram?.sendMessage) {
+      const activeAdapters = this.adapters.map((a) => a.name).join(", ");
+      const activeTasks = this.stateStore.getActive().length;
+      const lines = [
+        "⚙️ Harness started",
+        `PID: ${process.pid}`,
+        `Adapters: ${activeAdapters}`,
+        `Project: ${this.generalProjectDir}`,
+        `Active tasks: ${activeTasks}`,
+      ];
+      await this.telegram.sendMessage("general", lines.join("\n"));
+    }
   }
 
   async clearGeneralSession(): Promise<void> {
     try {
       await this.sessionManager.killSession(Orchestrator.GENERAL_SESSION);
-      this.bridgeServer.disconnectSession(Orchestrator.GENERAL_SESSION);
     } catch {
       // session may not exist
     }
+    this.replyContext.delete(Orchestrator.GENERAL_SESSION);
     await this.startGeneralSession();
     console.log("General session cleared and restarted");
   }
@@ -156,6 +164,11 @@ export class Orchestrator {
     this.stateStore.save(session);
 
     if (this.telegram?.sendMessage && telegramThreadId) {
+      // Set reply context for task sessions
+      this.replyContext.set(sessionId, {
+        adapter: "telegram",
+        threadId: telegramThreadId,
+      });
       await this.telegram.sendMessage(
         telegramThreadId,
         `Started working on: ${task.title}`,
@@ -165,14 +178,11 @@ export class Orchestrator {
 
   handleMessage(msg: IncomingMessage): void {
     console.log(`[${msg.channelType}] ${msg.author}: ${msg.text}`);
-    console.log(`[route] threadId="${msg.threadId}" metadata=${JSON.stringify(msg.metadata)}`);
-    const project =
-      (msg.metadata.project as string) || msg.channelType;
+    const project = (msg.metadata.project as string) || msg.channelType;
     this.memoryIngestion.buffer(project, msg);
 
     if (msg.channelType === "telegram") {
       const session = this.stateStore.findByTelegramThread(msg.threadId);
-      console.log(`[route] stateStore.findByTelegramThread("${msg.threadId}") => ${session ? `sessionId="${session.sessionId}" status="${session.status}"` : "null"}`);
 
       const targetSession =
         session?.status === "active"
@@ -181,39 +191,32 @@ export class Orchestrator {
             ? Orchestrator.GENERAL_SESSION
             : null;
 
-      console.log(`[route] targetSession="${targetSession}" (threadId="${msg.threadId}")`);
-
       if (!targetSession) {
-        console.log(`[route] DROPPED: no target session for threadId="${msg.threadId}"`);
+        console.log(
+          `[route] DROPPED: no target session for threadId="${msg.threadId}"`,
+        );
         return;
       }
 
-      const chatId =
-        (msg.metadata.chat_id as string) ||
-        String(this.telegram ? (this.telegram as any).config.ownerChatId : "");
+      // Set reply context so output routes back to the right place
+      this.replyContext.set(targetSession, {
+        adapter: "telegram",
+        threadId: msg.threadId,
+      });
 
-      // Ensure the session is alive before sending; restart if needed
       void this.ensureSessionAlive(targetSession).then(() => {
-        console.log(`[route] sending to bridge: session="${targetSession}" chatId="${chatId}"`);
-        const sent = this.bridgeServer.sendToSession(targetSession, {
-          type: "message",
-          content: msg.text,
-          meta: {
-            adapter: "telegram",
-            chat_id: chatId,
-            message_id: (msg.metadata.message_id as string) || "",
-            user: msg.author,
-            thread_id: msg.threadId,
-          },
-        });
-        console.log(`[route] bridgeServer.sendToSession returned ${sent} (true=sent, false=queued)`);
+        console.log(
+          `[route] sending to session="${targetSession}" via stdin`,
+        );
+        this.sessionManager.sendMessage(targetSession, msg.text);
       });
     } else {
-      console.log(`[route] non-telegram channel "${msg.channelType}" — no routing implemented`);
+      console.log(
+        `[route] non-telegram channel "${msg.channelType}" — no routing implemented`,
+      );
     }
   }
 
-  /** Ensure a session is alive, restarting the general session if needed. */
   private async ensureSessionAlive(sessionId: string): Promise<void> {
     if (this.sessionManager.isAlive(sessionId)) {
       return;
@@ -221,25 +224,6 @@ export class Orchestrator {
     console.log(`[route] session "${sessionId}" is dead, restarting...`);
     if (sessionId === Orchestrator.GENERAL_SESSION) {
       await this.startGeneralSession();
-      // Give the MCP bridge a moment to connect
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-  }
-
-  private handleReply(reply: BridgeReply): void {
-    console.log(`[reply] adapter="${reply.adapter}" chat_id="${reply.chat_id}" text="${reply.text.slice(0, 200)}"`);
-    const adapter = this.adapters.find((a) => a.name === reply.adapter);
-    if (adapter?.sendMessage) {
-      console.log(`[reply] forwarding to ${reply.adapter} adapter`);
-      void adapter.sendMessage(reply.chat_id, reply.text);
-    } else {
-      console.log(`[reply] WARNING: no adapter found for "${reply.adapter}" (available: ${this.adapters.map(a => a.name).join(", ")})`);
-    }
-  }
-
-  private handlePermissionRequest(req: BridgePermissionRequest): void {
-    if (this.telegram) {
-      void this.telegram.sendPermissionPrompt(req);
     }
   }
 }

@@ -57,50 +57,7 @@ export interface SessionManager {
   listSessions(): string[];
 }
 
-// Bridge protocol types — messages between harness and channel-bridge over WS
-
-export interface BridgeMessage {
-  type: "message";
-  content: string;
-  meta: Record<string, string>;
-}
-
-export interface BridgeReply {
-  type: "reply";
-  adapter: string;
-  chat_id: string;
-  text: string;
-  reply_to?: string;
-  files?: string[];
-}
-
-export interface BridgePermissionRequest {
-  type: "permission_request";
-  sessionId: string;
-  requestId: string;
-  toolName: string;
-  description: string;
-  inputPreview: string;
-}
-
-export interface BridgePermissionResponse {
-  type: "permission_response";
-  requestId: string;
-  behavior: "allow" | "deny";
-}
-
-export interface BridgeRegistration {
-  type: "register";
-  sessionId: string;
-}
-
-export type BridgeInbound = BridgeMessage;
-export type BridgeOutbound =
-  | BridgeReply
-  | BridgePermissionRequest
-  | BridgeRegistration;
-
-export interface ChannelsConfig {
+export interface HarnessConfig {
   telegram: {
     botToken: string;
     ownerChatId: number;
@@ -122,10 +79,6 @@ export interface ChannelsConfig {
     claudeArgs: string[];
     projectDir: string;
     systemPrompt?: string;
-  };
-  bridge: {
-    wsPort: number;
-    channelBridgePath: string;
   };
   memory: {
     ingestIntervalMs: number;

@@ -1,3 +1,4 @@
 node_modules
 dist/
 channels.config.json
+harness.config.json

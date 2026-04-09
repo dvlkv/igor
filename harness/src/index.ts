@@ -2,7 +2,6 @@ import express from "express";
 import { loadConfig } from "./config.js";
 import { StateStore } from "./state.js";
 import { ClaudeSessionManager } from "./session-manager.js";
-import { BridgeServer } from "./bridge-server.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
 import { SlackAdapter } from "./adapters/slack.js";
@@ -11,15 +10,11 @@ import { GitHubAdapter } from "./adapters/github.js";
 import { Orchestrator } from "./orchestrator.js";
 import type { ChannelAdapter } from "./types.js";
 
-const configPath = process.argv[2] ?? "channels.config.json";
+const configPath = process.argv[2] ?? "harness.config.json";
 const config = loadConfig(configPath);
 
 const stateStore = new StateStore(config.stateFile);
-const bridgeServer = new BridgeServer(config.bridge.wsPort);
-const sessionManager = new ClaudeSessionManager({
-  bridgeWsPort: config.bridge.wsPort,
-  channelBridgePath: config.bridge.channelBridgePath,
-});
+const sessionManager = new ClaudeSessionManager();
 const memoryIngestion = new MemoryIngestion({
   bufferDir: config.memory.bufferDir,
   ingestIntervalMs: config.memory.ingestIntervalMs,
@@ -77,7 +72,6 @@ const orchestrator = new Orchestrator({
   telegram: telegramAdapter,
   stateStore,
   sessionManager,
-  bridgeServer,
   memoryIngestion,
   worktreeDir: config.worktreeDir,
   generalProjectDir: config.general.projectDir,
@@ -135,14 +129,13 @@ async function main() {
   memoryIngestion.start();
   await orchestrator.startGeneralSession();
 
-  console.log("Igor Channels started (channels mode, no tmux)");
+  console.log("Igor harness started (JSON I/O mode)");
 
   async function shutdown() {
     console.log("Shutting down...");
     memoryIngestion.stop();
     await Promise.all(adapters.map((a) => a.stop()));
     await sessionManager.killAll();
-    bridgeServer.close();
     process.exit(0);
   }
 
