@@ -18,6 +18,12 @@ export interface TelegramConfig {
   ownerChatId: number;
 }
 
+/** Bot commands registered with Telegram on startup. Single source of truth. */
+const BOT_COMMANDS: Array<{ command: string; description: string }> = [
+  { command: "task", description: "Create a new task — /task Title" },
+  { command: "clear", description: "Clear and restart the general session" },
+];
+
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram";
   private bot: Bot;
@@ -199,16 +205,10 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
-    await this.bot.api.setMyCommands([
-      {
-        command: "task",
-        description: "Create a new task — /task Title\\nDescription",
-      },
-      {
-        command: "clear",
-        description: "Clear and restart the general Claude session",
-      },
-    ]);
+    await this.bot.api.setMyCommands(BOT_COMMANDS);
+    console.log(
+      `[telegram] registered ${BOT_COMMANDS.length} bot commands: ${BOT_COMMANDS.map((c) => `/${c.command}`).join(", ")}`,
+    );
     await this.bot.start();
   }
 
