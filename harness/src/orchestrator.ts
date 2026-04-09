@@ -224,6 +224,20 @@ export class Orchestrator {
           `[route] sending to session="${targetSession}" via stdin`,
         );
         this.sessionManager.sendMessage(targetSession, msg.text);
+
+        // Show "thinking..." indicator while Claude processes the message
+        if (this.telegram && !this.progressMessages.has(targetSession)) {
+          void this.telegram
+            .sendMessage(msg.threadId, "⚙️ _thinking..._")
+            .then((messageId) => {
+              if (messageId) {
+                this.progressMessages.set(targetSession, {
+                  threadId: msg.threadId,
+                  messageId,
+                });
+              }
+            });
+        }
       });
     } else {
       console.log(
