@@ -73,8 +73,13 @@ export class Orchestrator {
     }
 
     // Route tool_use events as progress messages
-    this.sessionManager.onToolUse((sessionId, toolName) => {
-      void this.handleToolUse(sessionId, toolName);
+    this.sessionManager.onToolUse((sessionId, toolName, input) => {
+      void this.handleToolUse(sessionId, toolName, input);
+    });
+
+    // Route assistant text as progress updates
+    this.sessionManager.onAssistantText((sessionId, text) => {
+      void this.handleAssistantText(sessionId, text);
     });
 
     // Route Claude JSON output back to adapters
@@ -224,6 +229,20 @@ export class Orchestrator {
           `[route] sending to session="${targetSession}" via stdin`,
         );
         this.sessionManager.sendMessage(targetSession, msg.text);
+
+        // Show "thinking..." indicator while Claude processes the message
+        if (this.telegram && !this.progressMessages.has(targetSession)) {
+          void this.telegram
+            .sendMessage(msg.threadId, "⚙️ _thinking..._")
+            .then((messageId) => {
+              if (messageId) {
+                this.progressMessages.set(targetSession, {
+                  threadId: msg.threadId,
+                  messageId,
+                });
+              }
+            });
+        }
       });
     } else {
       console.log(
@@ -232,15 +251,14 @@ export class Orchestrator {
     }
   }
 
-  private async handleToolUse(
+  private async handleAssistantText(
     sessionId: string,
-    toolName: string,
+    text: string,
   ): Promise<void> {
     const ctx = this.replyContext.get(sessionId);
     if (!ctx || !this.telegram) return;
 
-    const description = toolDisplayName(toolName);
-    const progressText = `⚙️ _${description}..._`;
+    const progressText = `⚙️ _thinking..._\n\n${text}`;
     const existing = this.progressMessages.get(sessionId);
 
     if (existing) {
@@ -260,6 +278,66 @@ export class Orchestrator {
           messageId,
         });
       }
+    }
+  }
+
+  private async handleToolUse(
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ): Promise<void> {
+    const ctx = this.replyContext.get(sessionId);
+    if (!ctx || !this.telegram) return;
+
+    const description = toolDisplayName(toolName);
+    const inputPreview = this.formatToolInput(toolName, input);
+    const progressText = inputPreview
+      ? `⚙️ _${description}..._\n\n${inputPreview}`
+      : `⚙️ _${description}..._`;
+    const existing = this.progressMessages.get(sessionId);
+
+    if (existing) {
+      await this.telegram.editMessage(
+        ctx.threadId,
+        existing.messageId,
+        progressText,
+      );
+    } else {
+      const messageId = await this.telegram.sendMessage(
+        ctx.threadId,
+        progressText,
+      );
+      if (messageId) {
+        this.progressMessages.set(sessionId, {
+          threadId: ctx.threadId,
+          messageId,
+        });
+      }
+    }
+  }
+
+  private formatToolInput(
+    toolName: string,
+    input: Record<string, unknown>,
+  ): string {
+    switch (toolName) {
+      case "Bash":
+        return input.command ? `\`${String(input.command).slice(0, 200)}\`` : "";
+      case "Read":
+        return input.file_path ? String(input.file_path) : "";
+      case "Edit":
+      case "Write":
+        return input.file_path ? String(input.file_path) : "";
+      case "Grep":
+        return input.pattern ? `\`${String(input.pattern)}\`` : "";
+      case "Glob":
+        return input.pattern ? `\`${String(input.pattern)}\`` : "";
+      case "WebSearch":
+        return input.query ? String(input.query) : "";
+      case "WebFetch":
+        return input.url ? String(input.url) : "";
+      default:
+        return "";
     }
   }
 
