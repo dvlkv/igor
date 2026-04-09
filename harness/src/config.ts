@@ -4,11 +4,7 @@ import type { ChannelsConfig } from "./types.js";
 function resolveEnvVars(obj: unknown): unknown {
   if (typeof obj === "string" && obj.startsWith("$")) {
     const varName = obj.slice(1);
-    const value = process.env[varName];
-    if (value === undefined) {
-      throw new Error(`Environment variable ${varName} is not set`);
-    }
-    return value;
+    return process.env[varName] ?? "";
   }
   if (Array.isArray(obj)) {
     return obj.map(resolveEnvVars);

@@ -35,26 +35,70 @@ export interface TaskSession {
   url?: string;
   worktreePath: string;
   branch: string;
-  tmuxSession: string;
+  sessionId: string;
   telegramThreadId: string;
   status: "active" | "completed";
   createdAt: string;
+  claudePid?: number;
 }
 
 export interface SessionManagerOptions {
   name: string;
   worktreePath: string;
   prompt: string;
-  mcpConfig?: string;
+  systemPrompt?: string;
+  claudeArgs?: string[];
 }
 
 export interface SessionManager {
   createSession(opts: SessionManagerOptions): Promise<void>;
-  sendInput(sessionName: string, text: string): Promise<void>;
-  readOutput(sessionName: string): AsyncIterable<string>;
-  killSession(sessionName: string): Promise<void>;
-  listSessions(): Promise<string[]>;
+  killSession(name: string): Promise<void>;
+  isAlive(name: string): boolean;
+  listSessions(): string[];
 }
+
+// Bridge protocol types — messages between harness and channel-bridge over WS
+
+export interface BridgeMessage {
+  type: "message";
+  content: string;
+  meta: Record<string, string>;
+}
+
+export interface BridgeReply {
+  type: "reply";
+  adapter: string;
+  chat_id: string;
+  text: string;
+  reply_to?: string;
+  files?: string[];
+}
+
+export interface BridgePermissionRequest {
+  type: "permission_request";
+  sessionId: string;
+  requestId: string;
+  toolName: string;
+  description: string;
+  inputPreview: string;
+}
+
+export interface BridgePermissionResponse {
+  type: "permission_response";
+  requestId: string;
+  behavior: "allow" | "deny";
+}
+
+export interface BridgeRegistration {
+  type: "register";
+  sessionId: string;
+}
+
+export type BridgeInbound = BridgeMessage;
+export type BridgeOutbound =
+  | BridgeReply
+  | BridgePermissionRequest
+  | BridgeRegistration;
 
 export interface ChannelsConfig {
   telegram: {
@@ -76,6 +120,12 @@ export interface ChannelsConfig {
   };
   general: {
     claudeArgs: string[];
+    projectDir: string;
+    systemPrompt?: string;
+  };
+  bridge: {
+    wsPort: number;
+    channelBridgePath: string;
   };
   memory: {
     ingestIntervalMs: number;

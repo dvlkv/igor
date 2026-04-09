@@ -1,87 +1,132 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("node:child_process", () => ({
-  exec: vi.fn(),
+  spawn: vi.fn(),
 }));
 
-import { exec } from "node:child_process";
-import { TmuxSessionManager } from "./session-manager.js";
+vi.mock("node:fs", () => ({
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
 
-const execMock = vi.mocked(exec);
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { ClaudeSessionManager } from "./session-manager.js";
+import { EventEmitter } from "node:events";
 
-function mockExecSuccess(stdout = "") {
-  execMock.mockImplementation((_cmd: any, cb: any) => {
-    cb(null, stdout, "");
-    return {} as any;
+const spawnMock = vi.mocked(spawn);
+const writeFileMock = vi.mocked(writeFileSync);
+
+function createMockProcess() {
+  const proc = new EventEmitter() as any;
+  proc.pid = 12345;
+  proc.exitCode = null;
+  proc.kill = vi.fn(() => {
+    proc.exitCode = 0;
+    queueMicrotask(() => proc.emit("exit", 0, null));
   });
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  return proc;
 }
 
-function mockExecError(message = "command failed") {
-  execMock.mockImplementation((_cmd: any, cb: any) => {
-    cb(new Error(message), "", message);
-    return {} as any;
-  });
-}
-
-describe("TmuxSessionManager", () => {
-  let manager: TmuxSessionManager;
+describe("ClaudeSessionManager", () => {
+  let manager: ClaudeSessionManager;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    manager = new TmuxSessionManager();
+    manager = new ClaudeSessionManager({
+      bridgeWsPort: 9100,
+      channelBridgePath: "/path/to/channel-bridge.js",
+    });
   });
 
-  it("creates tmux session with correct command", async () => {
-    mockExecSuccess();
+  it("spawns claude with correct args", async () => {
+    const mockProc = createMockProcess();
+    spawnMock.mockReturnValue(mockProc as any);
 
     await manager.createSession({
       name: "test-session",
       worktreePath: "/tmp/work",
       prompt: "do stuff",
+      systemPrompt: "You are igor",
     });
 
-    const firstCall = execMock.mock.calls[0][0] as string;
-    expect(firstCall).toContain("tmux new-session -d -s");
-    expect(firstCall).toContain("-c");
-    expect(firstCall).toContain("test-session");
-    expect(firstCall).toContain("/tmp/work");
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [cmd, args, opts] = spawnMock.mock.calls[0];
+    expect(cmd).toBe("claude");
+    expect(args).toContain("--print");
+    expect(args).toContain("--input-format");
+    expect(args).toContain("stream-json");
+    expect(args).toContain("--dangerously-skip-permissions");
+    expect(args).toContain("--system-prompt");
+    expect(args).toContain("You are igor");
+    expect(args).toContain("-p");
+    expect(args).toContain("do stuff");
+    expect((opts as any).cwd).toBe("/tmp/work");
   });
 
-  it("sends input via tmux send-keys", async () => {
-    mockExecSuccess();
+  it("writes MCP config with session ID and WS URL", async () => {
+    const mockProc = createMockProcess();
+    spawnMock.mockReturnValue(mockProc as any);
 
-    await manager.sendInput("my-session", "hello world");
+    await manager.createSession({
+      name: "my-session",
+      worktreePath: "/tmp/work",
+      prompt: "hello",
+    });
 
-    const cmd = execMock.mock.calls[0][0] as string;
-    expect(cmd).toContain("tmux send-keys -t my-session");
-    expect(cmd).toContain("hello world");
-    expect(cmd).toContain("Enter");
+    expect(writeFileMock).toHaveBeenCalled();
+    const configContent = writeFileMock.mock.calls[0][1] as string;
+    const config = JSON.parse(configContent);
+    expect(config.mcpServers.harness.env.SESSION_ID).toBe("my-session");
+    expect(config.mcpServers.harness.env.BRIDGE_WS_URL).toBe(
+      "ws://127.0.0.1:9100",
+    );
   });
 
-  it("kills a tmux session", async () => {
-    mockExecSuccess();
+  it("tracks alive sessions", async () => {
+    const mockProc = createMockProcess();
+    spawnMock.mockReturnValue(mockProc as any);
 
-    await manager.killSession("my-session");
+    await manager.createSession({
+      name: "sess-1",
+      worktreePath: "/tmp/work",
+      prompt: "hello",
+    });
 
-    const cmd = execMock.mock.calls[0][0] as string;
-    expect(cmd).toContain("tmux kill-session -t my-session");
+    expect(manager.isAlive("sess-1")).toBe(true);
+    expect(manager.listSessions()).toEqual(["sess-1"]);
   });
 
-  it("lists active sessions", async () => {
-    mockExecSuccess("sess-1\nsess-2\nsess-3");
+  it("kills a session", async () => {
+    const mockProc = createMockProcess();
+    spawnMock.mockReturnValue(mockProc as any);
 
-    const sessions = await manager.listSessions();
+    await manager.createSession({
+      name: "sess-1",
+      worktreePath: "/tmp/work",
+      prompt: "hello",
+    });
 
-    expect(sessions).toEqual(["sess-1", "sess-2", "sess-3"]);
-    const cmd = execMock.mock.calls[0][0] as string;
-    expect(cmd).toContain("tmux list-sessions");
+    await manager.killSession("sess-1");
+
+    expect(mockProc.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(manager.isAlive("sess-1")).toBe(false);
   });
 
-  it("returns empty list when no sessions exist", async () => {
-    mockExecError("no server running");
+  it("returns pid from createSession", async () => {
+    const mockProc = createMockProcess();
+    mockProc.pid = 42;
+    spawnMock.mockReturnValue(mockProc as any);
 
-    const sessions = await manager.listSessions();
+    const pid = await manager.createSession({
+      name: "sess-1",
+      worktreePath: "/tmp/work",
+      prompt: "hello",
+    });
 
-    expect(sessions).toEqual([]);
+    expect(pid).toBe(42);
   });
 });

@@ -21,12 +21,26 @@ vi.mock("./state.js", () => {
 
 vi.mock("./session-manager.js", () => {
   return {
-    TmuxSessionManager: vi.fn().mockImplementation(() => ({
-      createSession: vi.fn().mockResolvedValue(undefined),
-      sendInput: vi.fn().mockResolvedValue(undefined),
-      readOutput: vi.fn(),
+    ClaudeSessionManager: vi.fn().mockImplementation(() => ({
+      createSession: vi.fn().mockResolvedValue(12345),
       killSession: vi.fn().mockResolvedValue(undefined),
-      listSessions: vi.fn().mockResolvedValue([]),
+      isAlive: vi.fn().mockReturnValue(false),
+      listSessions: vi.fn().mockReturnValue([]),
+      killAll: vi.fn().mockResolvedValue(undefined),
+    })),
+  };
+});
+
+vi.mock("./bridge-server.js", () => {
+  return {
+    BridgeServer: vi.fn().mockImplementation(() => ({
+      sendToSession: vi.fn().mockReturnValue(true),
+      sendPermissionResponse: vi.fn(),
+      onReply: vi.fn(),
+      onPermissionRequest: vi.fn(),
+      isSessionConnected: vi.fn().mockReturnValue(false),
+      disconnectSession: vi.fn(),
+      close: vi.fn(),
     })),
   };
 });
@@ -52,7 +66,8 @@ vi.mock("node:child_process", () => {
 
 import { Orchestrator } from "./orchestrator.js";
 import { StateStore } from "./state.js";
-import { TmuxSessionManager } from "./session-manager.js";
+import { ClaudeSessionManager } from "./session-manager.js";
+import { BridgeServer } from "./bridge-server.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 
 type MessageHandler = (msg: IncomingMessage) => void;
@@ -88,33 +103,51 @@ function createMockAdapter(name: string) {
   return adapter;
 }
 
+function createMockTelegramAdapter() {
+  const base = createMockAdapter("telegram");
+  return {
+    ...base,
+    onClear: vi.fn(),
+    onPermissionResponse: vi.fn(),
+    sendPermissionPrompt: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe("Orchestrator", () => {
   let stateStore: InstanceType<typeof StateStore>;
-  let sessionManager: InstanceType<typeof TmuxSessionManager>;
+  let sessionManager: InstanceType<typeof ClaudeSessionManager>;
+  let bridgeServer: InstanceType<typeof BridgeServer>;
   let memoryIngestion: InstanceType<typeof MemoryIngestion>;
-  let telegramAdapter: ReturnType<typeof createMockAdapter>;
+  let telegramAdapter: ReturnType<typeof createMockTelegramAdapter>;
   let linearAdapter: ReturnType<typeof createMockAdapter>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     stateStore = new StateStore("/tmp/test-state.json");
-    sessionManager = new TmuxSessionManager();
+    sessionManager = new ClaudeSessionManager({
+      bridgeWsPort: 9100,
+      channelBridgePath: "./channel-bridge.js",
+    });
+    bridgeServer = new BridgeServer(9100);
     memoryIngestion = new MemoryIngestion({
       bufferDir: "/tmp/buffers",
       ingestIntervalMs: 60000,
     });
-    telegramAdapter = createMockAdapter("telegram");
+    telegramAdapter = createMockTelegramAdapter();
     linearAdapter = createMockAdapter("linear");
   });
 
   it("creates task session on assignment", async () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
-      telegram: telegramAdapter,
+      telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
+      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
     });
 
     linearAdapter.fireTask({
@@ -132,32 +165,40 @@ describe("Orchestrator", () => {
     );
     expect(sessionManager.createSession).toHaveBeenCalled();
     expect(stateStore.save).toHaveBeenCalled();
+
+    const savedSession = (stateStore.save as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as TaskSession;
+    expect(savedSession.sessionId).toBe("LIN-123");
+    expect(savedSession.claudePid).toBe(12345);
   });
 
-  it("routes telegram message to correct session", async () => {
+  it("routes telegram message to correct session via bridge", async () => {
     const mockSession: TaskSession = {
       taskId: "LIN-123",
       source: "linear",
       title: "Fix the bug",
       worktreePath: "/tmp/worktrees/LIN-123",
       branch: "igor/LIN-123",
-      tmuxSession: "LIN-123",
+      sessionId: "LIN-123",
       telegramThreadId: "thread-456",
       status: "active",
       createdAt: new Date().toISOString(),
     };
 
-    (stateStore.findByTelegramThread as ReturnType<typeof vi.fn>).mockReturnValue(
-      mockSession,
-    );
+    (
+      stateStore.findByTelegramThread as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockSession);
 
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
-      telegram: telegramAdapter,
+      telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
+      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
     });
 
     telegramAdapter.fireMessage({
@@ -165,25 +206,65 @@ describe("Orchestrator", () => {
       threadId: "thread-456",
       text: "Please also fix the typo",
       author: "user",
-      metadata: {},
+      metadata: { chat_id: "320784056", message_id: "789" },
     });
 
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(sessionManager.sendInput).toHaveBeenCalledWith(
-      "LIN-123",
-      "Please also fix the typo",
+    expect(bridgeServer.sendToSession).toHaveBeenCalledWith("LIN-123", {
+      type: "message",
+      content: "Please also fix the typo",
+      meta: {
+        adapter: "telegram",
+        chat_id: "320784056",
+        message_id: "789",
+        user: "user",
+        thread_id: "thread-456",
+      },
+    });
+  });
+
+  it("routes general telegram messages to general session", () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      stateStore,
+      sessionManager,
+      bridgeServer,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    telegramAdapter.fireMessage({
+      channelType: "telegram",
+      threadId: "general",
+      text: "Hello world",
+      author: "user",
+      metadata: { chat_id: "320784056" },
+    });
+
+    expect(bridgeServer.sendToSession).toHaveBeenCalledWith(
+      "igor-general",
+      expect.objectContaining({
+        type: "message",
+        content: "Hello world",
+      }),
     );
   });
 
   it("ingests all messages to memory", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
-      telegram: telegramAdapter,
+      telegram: telegramAdapter as any,
       stateStore,
       sessionManager,
+      bridgeServer,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
     });
 
     telegramAdapter.fireMessage({

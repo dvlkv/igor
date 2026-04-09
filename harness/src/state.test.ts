@@ -17,7 +17,7 @@ function makeSession(overrides: Partial<TaskSession> = {}): TaskSession {
     title: "Test task",
     worktreePath: "/tmp/wt",
     branch: "feat/test",
-    tmuxSession: "sess-1",
+    sessionId: "sess-1",
     telegramThreadId: "thread-1",
     status: "active",
     createdAt: "2026-01-01T00:00:00Z",

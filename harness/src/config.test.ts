@@ -28,7 +28,8 @@ describe("loadConfig", () => {
       },
       linear: { webhookSecret: "ws", assigneeId: "a1" },
       github: { webhookSecret: "gs", assigneeLogin: "user" },
-      general: { claudeArgs: [] },
+      general: { claudeArgs: [], projectDir: "/proj" },
+      bridge: { wsPort: 9100, channelBridgePath: "./bridge.js" },
       memory: { ingestIntervalMs: 1000, bufferDir: "/tmp" },
       webhookPort: 3000,
       stateFile: "state.json",
@@ -43,6 +44,8 @@ describe("loadConfig", () => {
     expect(config.slack.botToken).toBe("app-token");
     expect(config.slack.appToken).toBe("literal");
     expect(config.telegram.ownerChatId).toBe(123);
+    expect(config.bridge.wsPort).toBe(9100);
+    expect(config.bridge.channelBridgePath).toBe("./bridge.js");
   });
 
   it("throws if config file is missing", () => {
@@ -53,15 +56,14 @@ describe("loadConfig", () => {
     expect(() => loadConfig("/nonexistent.json")).toThrow();
   });
 
-  it("throws if env var is not set", () => {
+  it("returns empty string for unset env var", () => {
     const configJson = JSON.stringify({
       telegram: { botToken: "$MISSING_VAR", ownerChatId: 0 },
     });
 
     mockedReadFileSync.mockReturnValue(configJson);
 
-    expect(() => loadConfig("/fake/config.json")).toThrow(
-      "Environment variable MISSING_VAR is not set"
-    );
+    const config = loadConfig("/fake/config.json");
+    expect(config.telegram.botToken).toBe("");
   });
 });
