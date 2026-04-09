@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { ChannelsConfig } from "./types.js";
+import type { HarnessConfig } from "./types.js";
 
 function resolveEnvVars(obj: unknown): unknown {
   if (typeof obj === "string" && obj.startsWith("$")) {
@@ -19,8 +19,8 @@ function resolveEnvVars(obj: unknown): unknown {
   return obj;
 }
 
-export function loadConfig(filePath: string): ChannelsConfig {
+export function loadConfig(filePath: string): HarnessConfig {
   const raw = readFileSync(filePath, "utf-8");
   const parsed = JSON.parse(raw);
-  return resolveEnvVars(parsed) as ChannelsConfig;
+  return resolveEnvVars(parsed) as HarnessConfig;
 }

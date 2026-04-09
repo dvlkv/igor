@@ -3,8 +3,15 @@ import type {
   ChannelAdapter,
   IncomingMessage,
   TaskAssignment,
-  BridgePermissionRequest,
 } from "../types.js";
+
+export interface PermissionPrompt {
+  sessionId: string;
+  requestId: string;
+  toolName: string;
+  description: string;
+  inputPreview: string;
+}
 
 export interface TelegramConfig {
   botToken: string;
@@ -141,7 +148,7 @@ export class TelegramAdapter implements ChannelAdapter {
     return String(result.message_id);
   }
 
-  async sendPermissionPrompt(req: BridgePermissionRequest): Promise<void> {
+  async sendPermissionPrompt(req: PermissionPrompt): Promise<void> {
     const text =
       `Claude wants to run **${req.toolName}**:\n${req.description}`;
 

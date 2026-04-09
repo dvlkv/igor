@@ -29,7 +29,6 @@ describe("loadConfig", () => {
       linear: { webhookSecret: "ws", assigneeId: "a1" },
       github: { webhookSecret: "gs", assigneeLogin: "user" },
       general: { claudeArgs: [], projectDir: "/proj" },
-      bridge: { wsPort: 9100, channelBridgePath: "./bridge.js" },
       memory: { ingestIntervalMs: 1000, bufferDir: "/tmp" },
       webhookPort: 3000,
       stateFile: "state.json",
@@ -44,8 +43,6 @@ describe("loadConfig", () => {
     expect(config.slack.botToken).toBe("app-token");
     expect(config.slack.appToken).toBe("literal");
     expect(config.telegram.ownerChatId).toBe(123);
-    expect(config.bridge.wsPort).toBe(9100);
-    expect(config.bridge.channelBridgePath).toBe("./bridge.js");
   });
 
   it("throws if config file is missing", () => {
