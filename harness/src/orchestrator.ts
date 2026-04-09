@@ -109,7 +109,7 @@ export class Orchestrator {
     await this.sessionManager.createSession({
       name: Orchestrator.GENERAL_SESSION,
       worktreePath: this.generalProjectDir,
-      prompt: "Session initialized. Awaiting messages.",
+      prompt: "",
       systemPrompt: this.generalSystemPrompt,
       claudeArgs: this.generalClaudeArgs,
     });
