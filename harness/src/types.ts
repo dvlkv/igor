@@ -24,7 +24,7 @@ export interface ChannelAdapter {
   stop(): Promise<void>;
   onMessage(handler: (msg: IncomingMessage) => void): void;
   onTaskAssigned(handler: (task: TaskAssignment) => void): void;
-  sendMessage?(threadId: string, text: string): Promise<void>;
+  sendMessage?(threadId: string, text: string): Promise<number | undefined>;
   createThread?(title: string): Promise<string>;
 }
 

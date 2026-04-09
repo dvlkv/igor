@@ -9,6 +9,7 @@ import { StateStore } from "./state.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import type { TelegramAdapter } from "./adapters/telegram.js";
+import { toolDisplayName } from "./tool-display.js";
 
 export interface OrchestratorOptions {
   adapters: ChannelAdapter[];
@@ -50,6 +51,10 @@ export class Orchestrator {
     string,
     { adapter: string; threadId: string }
   >();
+  private progressMessages = new Map<
+    string,
+    { threadId: string; messageId: number }
+  >();
 
   constructor(opts: OrchestratorOptions) {
     this.adapters = opts.adapters;
@@ -67,6 +72,11 @@ export class Orchestrator {
       adapter.onTaskAssigned((task) => this.handleTaskAssignment(task));
     }
 
+    // Route tool_use events as progress messages
+    this.sessionManager.onToolUse((sessionId, toolName) => {
+      void this.handleToolUse(sessionId, toolName);
+    });
+
     // Route Claude JSON output back to adapters
     this.sessionManager.onOutput((sessionId, text) => {
       const ctx = this.replyContext.get(sessionId);
@@ -74,6 +84,11 @@ export class Orchestrator {
         console.log(
           `[output] session="${sessionId}" → ${ctx.adapter} thread="${ctx.threadId}" text="${text.slice(0, 200)}"`,
         );
+        const progress = this.progressMessages.get(sessionId);
+        if (progress && this.telegram?.deleteMessage) {
+          void this.telegram.deleteMessage(progress.messageId);
+          this.progressMessages.delete(sessionId);
+        }
         const adapter = this.adapters.find((a) => a.name === ctx.adapter);
         if (adapter?.sendMessage) {
           void adapter.sendMessage(ctx.threadId, text);
@@ -214,6 +229,37 @@ export class Orchestrator {
       console.log(
         `[route] non-telegram channel "${msg.channelType}" — no routing implemented`,
       );
+    }
+  }
+
+  private async handleToolUse(
+    sessionId: string,
+    toolName: string,
+  ): Promise<void> {
+    const ctx = this.replyContext.get(sessionId);
+    if (!ctx || !this.telegram) return;
+
+    const description = toolDisplayName(toolName);
+    const progressText = `⚙️ _${description}..._`;
+    const existing = this.progressMessages.get(sessionId);
+
+    if (existing) {
+      await this.telegram.editMessage(
+        ctx.threadId,
+        existing.messageId,
+        progressText,
+      );
+    } else {
+      const messageId = await this.telegram.sendMessage(
+        ctx.threadId,
+        progressText,
+      );
+      if (messageId) {
+        this.progressMessages.set(sessionId, {
+          threadId: ctx.threadId,
+          messageId,
+        });
+      }
     }
   }
 
