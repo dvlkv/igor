@@ -33,6 +33,7 @@ vi.mock("./session-manager.js", () => {
         sendMessage: vi.fn().mockReturnValue(true),
         onOutput: vi.fn(),
         onToolUse: vi.fn(),
+        onAssistantText: vi.fn(),
       };
     }),
   };
@@ -279,7 +280,7 @@ describe("Orchestrator", () => {
   it("sends progress message on first tool_use and edits on subsequent", async () => {
     let outputCallback: ((sessionId: string, text: string) => void) | undefined;
     let toolUseCallback:
-      | ((sessionId: string, toolName: string) => void)
+      | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
       | undefined;
 
     (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
@@ -288,7 +289,7 @@ describe("Orchestrator", () => {
       },
     );
     (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
-      (handler: (sessionId: string, toolName: string) => void) => {
+      (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
         toolUseCallback = handler;
       },
     );
@@ -316,30 +317,37 @@ describe("Orchestrator", () => {
 
     await new Promise((r) => setTimeout(r, 10));
 
-    // First tool_use: should send a new progress message
-    toolUseCallback!("igor-general", "Bash");
-    await new Promise((r) => setTimeout(r, 10));
-
+    // The "thinking..." indicator was already sent when the message arrived
     expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
       "general",
-      "⚙️ _Running command..._",
+      "⚙️ _thinking..._",
     );
 
-    // Second tool_use: should edit the existing progress message
-    toolUseCallback!("igor-general", "Read");
+    // First tool_use: should edit the existing "thinking..." progress message
+    toolUseCallback!("igor-general", "Bash", { command: "ls" });
     await new Promise((r) => setTimeout(r, 10));
 
     expect(telegramAdapter.editMessage).toHaveBeenCalledWith(
       "general",
       100,
-      "⚙️ _Reading files..._",
+      "⚙️ _Running command..._\n\n`ls`",
+    );
+
+    // Second tool_use: should edit the same progress message
+    toolUseCallback!("igor-general", "Read", { file_path: "/tmp/x" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(telegramAdapter.editMessage).toHaveBeenCalledWith(
+      "general",
+      100,
+      "⚙️ _Reading files..._\n\n/tmp/x",
     );
   });
 
   it("deletes progress message and sends result as new message", async () => {
     let outputCallback: ((sessionId: string, text: string) => void) | undefined;
     let toolUseCallback:
-      | ((sessionId: string, toolName: string) => void)
+      | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
       | undefined;
 
     (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
@@ -348,7 +356,7 @@ describe("Orchestrator", () => {
       },
     );
     (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
-      (handler: (sessionId: string, toolName: string) => void) => {
+      (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
         toolUseCallback = handler;
       },
     );
@@ -377,7 +385,7 @@ describe("Orchestrator", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Send a tool_use first
-    toolUseCallback!("igor-general", "Bash");
+    toolUseCallback!("igor-general", "Bash", { command: "ls" });
     await new Promise((r) => setTimeout(r, 10));
 
     // Reset mocks to isolate result behavior

@@ -1,6 +1,10 @@
 import express from "express";
 import { loadConfig } from "./config.js";
 import { StateStore } from "./state.js";
+import { TaskStore } from "./task-store.js";
+import { ProjectStore } from "./project-store.js";
+import { Logger } from "./logger.js";
+import { initStorage, defaultStorageConfig } from "./storage.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
@@ -13,12 +17,34 @@ import type { ChannelAdapter } from "./types.js";
 const configPath = process.argv[2] ?? "harness.config.json";
 const config = loadConfig(configPath);
 
+// Initialize storage layout (directories + symlinks)
+const storageConfig =
+  config.storage ?? defaultStorageConfig(config.general.projectDir);
+initStorage(storageConfig);
+
+const logger = new Logger(storageConfig.logsDir);
 const stateStore = new StateStore(config.stateFile);
+const taskStore = new TaskStore(storageConfig.tasksFile);
+const projectStore = new ProjectStore(storageConfig.projectsFile);
 const sessionManager = new ClaudeSessionManager();
 const memoryIngestion = new MemoryIngestion({
   bufferDir: config.memory.bufferDir,
   ingestIntervalMs: config.memory.ingestIntervalMs,
+  logger,
 });
+
+// Register igor itself as a project
+if (!projectStore.get("igor")) {
+  projectStore.register({
+    name: "igor",
+    path: storageConfig.igorDir,
+    remoteUrl: "git@github.com:dvlkv/igor.git",
+    createdAt: new Date().toISOString(),
+  });
+  logger.logProjectEvent("igor", "registered", {
+    path: storageConfig.igorDir,
+  });
+}
 
 const adapters: ChannelAdapter[] = [];
 
