@@ -129,7 +129,7 @@ describe("TelegramAdapter", () => {
       ownerChatId: 123,
     });
 
-    const completedTasks: string[] = [];
+    const completedTasks: (string | undefined)[] = [];
     adapter.onTaskCompleted((taskId) => completedTasks.push(taskId));
 
     const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
