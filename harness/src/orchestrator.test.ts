@@ -20,6 +20,7 @@ vi.mock("./task-store.js", () => {
         findBySlackThread: vi.fn(),
         findByLinearIssue: vi.fn(),
         findByGithubIssue: vi.fn(),
+        findByBranch: vi.fn(),
       };
     }),
   };
@@ -97,6 +98,7 @@ function createMockAdapter(name: string) {
     }),
     sendMessage: vi.fn().mockResolvedValue(100),
     createThread: vi.fn().mockResolvedValue("thread-123"),
+    onTaskCompleted: vi.fn(),
     fireMessage(msg: IncomingMessage) {
       messageHandler?.(msg);
     },
@@ -647,6 +649,60 @@ describe("Orchestrator", () => {
 
     expect(taskStore.update).toHaveBeenCalledWith(
       "LIN-123",
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("completes task when GitHub adapter reports PR merged", async () => {
+    const mockTask: Task = {
+      taskId: "dvlkv/igor#50",
+      projectName: "igor",
+      source: "github",
+      title: "Add feature",
+      worktreePath: "/tmp/worktrees/dvlkv-igor-50",
+      branch: "igor/dvlkv-igor-50",
+      sessionId: "dvlkv-igor-50",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+    (
+      taskStore.findByBranch as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
+
+    const { exec } = await import("node:child_process");
+    (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string, cb: Function) => {
+        cb(null, "  main\n  igor/dvlkv-igor-50\n", "");
+      },
+    );
+
+    const githubAdapter = createMockAdapter("github");
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, githubAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Simulate GitHub PR merged callback
+    const handler = (
+      githubAdapter.onTaskCompleted as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0];
+
+    // GitHub emits branch name — orchestrator resolves to task
+    if (handler) {
+      await handler("igor/dvlkv-igor-50");
+    }
+
+    expect(taskStore.update).toHaveBeenCalledWith(
+      "dvlkv/igor#50",
       expect.objectContaining({ status: "completed" }),
     );
   });

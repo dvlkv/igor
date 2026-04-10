@@ -71,6 +71,25 @@ export class Orchestrator {
     for (const adapter of this.adapters) {
       adapter.onMessage((msg) => this.handleMessage(msg));
       adapter.onTaskAssigned((task) => this.handleTaskAssignment(task));
+      if ("onTaskCompleted" in adapter && typeof (adapter as any).onTaskCompleted === "function") {
+        (adapter as any).onTaskCompleted(async (idOrBranch: string) => {
+          // Try as taskId first, then as branch, then as linearIssueId
+          let task = this.taskStore.get(idOrBranch);
+          if (!task) {
+            task = this.taskStore.findByBranch(idOrBranch);
+          }
+          if (!task) {
+            task = this.taskStore.findByLinearIssue(idOrBranch);
+          }
+          if (task) {
+            await this.completeTask(task.taskId);
+          } else {
+            console.log(
+              `[cleanup] could not resolve task for "${idOrBranch}"`,
+            );
+          }
+        });
+      }
     }
 
     // Route tool_use events as progress messages
