@@ -83,6 +83,25 @@ export class Orchestrator {
       void this.handleAssistantText(sessionId, text);
     });
 
+    if (this.telegram) {
+      this.telegram.onTaskCompleted(
+        async (taskId: string | undefined, threadId: string | undefined) => {
+          let resolvedTaskId = taskId;
+          if (!resolvedTaskId && threadId) {
+            const task = this.taskStore.findByTelegramThread(threadId);
+            resolvedTaskId = task?.taskId;
+          }
+          if (resolvedTaskId) {
+            await this.completeTask(resolvedTaskId);
+          } else {
+            console.log(
+              `[done] could not resolve task — taskId=${taskId} threadId=${threadId}`,
+            );
+          }
+        },
+      );
+    }
+
     // Route Claude JSON output back to adapters
     this.sessionManager.onOutput((sessionId, text) => {
       const ctx = this.replyContext.get(sessionId);
