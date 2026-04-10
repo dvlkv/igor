@@ -5,6 +5,7 @@ import {
   lstatSync,
   readlinkSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { StorageConfig } from "./types.js";
 
@@ -25,7 +26,7 @@ import type { StorageConfig } from "./types.js";
  */
 
 export function defaultStorageConfig(igorDir: string): StorageConfig {
-  const home = process.env.HOME ?? "/home/pi";
+  const home = homedir();
   const dotIgor = join(home, ".igor");
   return {
     projectsDir: join(home, "projects"),
