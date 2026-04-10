@@ -74,4 +74,8 @@ export class TaskStore {
   findByGithubIssue(issueNumber: number): Task | undefined {
     return this.data.tasks.find((t) => t.githubIssueNumber === issueNumber);
   }
+
+  findByBranch(branch: string): Task | undefined {
+    return this.data.tasks.find((t) => t.branch === branch);
+  }
 }
