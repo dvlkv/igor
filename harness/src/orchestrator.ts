@@ -10,6 +10,7 @@ import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import type { TelegramAdapter } from "./adapters/telegram.js";
 import { toolDisplayName } from "./tool-display.js";
+import { generateThreadName } from "./thread-name.js";
 
 export interface OrchestratorOptions {
   adapters: ChannelAdapter[];
@@ -155,9 +156,8 @@ export class Orchestrator {
 
     let telegramThreadId = "";
     if (this.telegram?.createThread) {
-      telegramThreadId = await this.telegram.createThread(
-        `Task: ${task.title}`,
-      );
+      const threadName = await generateThreadName(task.title, task.description);
+      telegramThreadId = await this.telegram.createThread(threadName);
     }
 
     const sessionId = sanitizedId;

@@ -131,28 +131,24 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
-## Execution: Automatic Mode Selection
+## Execution Handoff
 
-After saving the plan, choose the execution mode yourself based on scope. Do NOT ask the user — decide and proceed.
+After saving the plan, update the Draft PR body to include the implementation plan, then offer the execution choice:
 
-**Decision criteria:**
+**"Plan complete and Draft PR created. Two execution options:**
 
-| Signal | Inline Execution | Subagent-Driven |
-|---|---|---|
-| Total tasks | 1-3 | 4+ |
-| Tasks are independent | doesn't matter | yes |
-| Tasks are tightly coupled (each depends on previous) | yes | no — use inline |
-| Touches few files total | yes | doesn't matter |
-| Large scope, many files | no | yes |
+**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
 
-**If Inline Execution:**
-- Announce: "Small scope — executing inline."
-- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
-- Execute tasks in this session with checkpoints
+**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
 
-**If Subagent-Driven:**
-- Announce: "Multiple independent tasks — using subagent-driven development."
+**Which approach?"**
+
+**If Subagent-Driven chosen:**
 - **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
 - Fresh subagent per task + two-stage review
 
-Proceed to execution immediately after announcing the choice.
+**If Inline Execution chosen:**
+- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
+- Batch execution with checkpoints for review
+
+When implementation is complete, mark the PR as ready: `gh pr ready`.
