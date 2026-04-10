@@ -50,21 +50,27 @@ describe("MemoryIngestion", () => {
     await ingestion.flush();
 
     expect(mkdirSync).toHaveBeenCalledWith("/tmp/buffers", { recursive: true });
+    expect(mkdirSync).toHaveBeenCalledWith("/tmp/buffers/alpha", {
+      recursive: true,
+    });
+    expect(mkdirSync).toHaveBeenCalledWith("/tmp/buffers/beta", {
+      recursive: true,
+    });
     expect(writeFileSync).toHaveBeenCalledTimes(2);
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/buffers/alpha.json",
+      "/tmp/buffers/alpha/alpha.json",
       expect.any(String),
     );
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/buffers/beta.json",
+      "/tmp/buffers/beta/beta.json",
       expect.any(String),
     );
     expect(exec).toHaveBeenCalledWith(
-      "mempalace mine /tmp/buffers/alpha.json --mode convos",
+      "mempalace mine /tmp/buffers/alpha --mode convos",
       expect.any(Function),
     );
     expect(exec).toHaveBeenCalledWith(
-      "mempalace mine /tmp/buffers/beta.json --mode convos",
+      "mempalace mine /tmp/buffers/beta --mode convos",
       expect.any(Function),
     );
   });
