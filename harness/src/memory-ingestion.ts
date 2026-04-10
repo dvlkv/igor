@@ -49,14 +49,16 @@ export class MemoryIngestion {
     for (const [project, messages] of projects) {
       if (messages.length === 0) continue;
 
-      const filePath = join(this.bufferDir, `${project}.json`);
+      const projectDir = join(this.bufferDir, project);
+      mkdirSync(projectDir, { recursive: true });
+      const filePath = join(projectDir, `${project}.json`);
       writeFileSync(filePath, JSON.stringify(messages, null, 2));
 
       // Log the memory ingestion event
       this.logger?.logMemoryIngestion(project, messages.length, filePath);
 
       await new Promise<void>((resolve, reject) => {
-        exec(`mempalace mine ${filePath} --mode convos`, (err) => {
+        exec(`mempalace mine ${projectDir} --mode convos`, (err) => {
           if (err) reject(err);
           else resolve();
         });
