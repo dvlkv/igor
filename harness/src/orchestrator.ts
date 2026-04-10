@@ -199,6 +199,92 @@ export class Orchestrator {
     }
   }
 
+  async completeTask(taskId: string): Promise<void> {
+    const task = this.taskStore.get(taskId);
+    if (!task || task.status === "completed" || task.status === "abandoned") {
+      console.log(`[cleanup] task "${taskId}" not found or already done`);
+      return;
+    }
+
+    console.log(`[cleanup] completing task "${taskId}"`);
+
+    // 1. Kill Claude session
+    try {
+      if (this.sessionManager.isAlive(task.sessionId)) {
+        await this.sessionManager.killSession(task.sessionId);
+        console.log(`[cleanup] killed session "${task.sessionId}"`);
+      }
+    } catch (err: any) {
+      console.log(`[cleanup] session kill failed: ${err.message}`);
+    }
+
+    // 2. Check if branch is merged and handle worktree + branch
+    let branchMerged = false;
+    let branchMessage = "";
+    try {
+      const mergedOutput = await run(
+        `git branch --merged main`,
+      );
+      branchMerged = mergedOutput
+        .split("\n")
+        .map((b) => b.trim())
+        .includes(task.branch);
+    } catch (err: any) {
+      console.log(`[cleanup] merge check failed: ${err.message}`);
+    }
+
+    // 3. Remove worktree
+    try {
+      if (branchMerged) {
+        await run(`git worktree remove ${task.worktreePath}`);
+      } else {
+        await run(`git worktree remove --force ${task.worktreePath}`);
+      }
+      console.log(`[cleanup] removed worktree "${task.worktreePath}"`);
+    } catch (err: any) {
+      console.log(`[cleanup] worktree remove failed: ${err.message}`);
+    }
+
+    // 4. Delete branch if merged, keep if not
+    if (branchMerged) {
+      try {
+        await run(`git branch -d ${task.branch}`);
+        branchMessage = `Branch \`${task.branch}\` deleted.`;
+        console.log(`[cleanup] deleted branch "${task.branch}"`);
+      } catch (err: any) {
+        branchMessage = `Branch \`${task.branch}\` kept (delete failed).`;
+        console.log(`[cleanup] branch delete failed: ${err.message}`);
+      }
+    } else {
+      branchMessage = `Branch \`${task.branch}\` kept (not merged).`;
+    }
+
+    // 5. Update task status
+    this.taskStore.update(taskId, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      claudePid: undefined,
+    });
+
+    // 6. Notify Telegram
+    if (this.telegram?.sendMessage && task.telegramThreadId) {
+      try {
+        await this.telegram.sendMessage(
+          task.telegramThreadId,
+          `Task completed. ${branchMessage}`,
+        );
+      } catch (err: any) {
+        console.log(`[cleanup] telegram notify failed: ${err.message}`);
+      }
+    }
+
+    // 7. Clean up internal maps
+    this.replyContext.delete(task.sessionId);
+    this.progressMessages.delete(task.sessionId);
+
+    console.log(`[cleanup] task "${taskId}" completed`);
+  }
+
   handleMessage(msg: IncomingMessage): void {
     console.log(`[${msg.channelType}] ${msg.author}: ${msg.text}`);
     const project = (msg.metadata.project as string) || msg.channelType;
