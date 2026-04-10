@@ -9,31 +9,31 @@ import { join, resolve } from "node:path";
 import type { StorageConfig } from "./types.js";
 
 /**
- * Default storage layout rooted at ~/projects with igor symlinked in.
+ * Default storage layout — data lives in ~/.igor, NOT inside the repo.
  *
  * Directory structure:
  *   ~/projects/              — cloned project repos (main branch)
  *     igor -> ~/igor         — symlink to igor's own repo
- *   ~/igor/data/
+ *   ~/.igor/
  *     projects.json          — project registry
  *     tasks.json             — task registry
- *   ~/igor/data/logs/
- *     messages/              — raw JSONL message logs
- *     memory/                — memory ingestion logs
- *     tasks/                 — task lifecycle logs
- *   ~/igor/worktrees/        — git worktrees for active tasks
+ *     worktrees/             — git worktrees for active tasks
+ *     logs/
+ *       messages/            — raw JSONL message logs
+ *       memory/              — memory ingestion logs
+ *       tasks/               — task lifecycle logs
  */
 
 export function defaultStorageConfig(igorDir: string): StorageConfig {
   const home = process.env.HOME ?? "/home/pi";
-  const dataDir = join(igorDir, "data");
+  const dotIgor = join(home, ".igor");
   return {
     projectsDir: join(home, "projects"),
     igorDir: resolve(igorDir),
-    worktreeDir: join(igorDir, "worktrees"),
-    logsDir: join(dataDir, "logs"),
-    projectsFile: join(dataDir, "projects.json"),
-    tasksFile: join(dataDir, "tasks.json"),
+    worktreeDir: join(dotIgor, "worktrees"),
+    logsDir: join(dotIgor, "logs"),
+    projectsFile: join(dotIgor, "projects.json"),
+    tasksFile: join(dotIgor, "tasks.json"),
   };
 }
 

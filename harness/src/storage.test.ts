@@ -22,10 +22,10 @@ function makeConfig(overrides: Partial<StorageConfig> = {}): StorageConfig {
   return {
     projectsDir: "/home/pi/projects",
     igorDir: "/home/pi/igor",
-    worktreeDir: "/home/pi/igor/worktrees",
-    logsDir: "/home/pi/igor/data/logs",
-    projectsFile: "/home/pi/igor/data/projects.json",
-    tasksFile: "/home/pi/igor/data/tasks.json",
+    worktreeDir: "/home/pi/.igor/worktrees",
+    logsDir: "/home/pi/.igor/logs",
+    projectsFile: "/home/pi/.igor/projects.json",
+    tasksFile: "/home/pi/.igor/tasks.json",
     ...overrides,
   };
 }
@@ -44,20 +44,20 @@ describe("initStorage", () => {
     expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/projects", {
       recursive: true,
     });
-    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/igor/worktrees", {
+    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/.igor/worktrees", {
       recursive: true,
     });
-    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/igor/data/logs", {
+    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/.igor/logs", {
       recursive: true,
     });
     expect(mMkdirSync).toHaveBeenCalledWith(
-      "/home/pi/igor/data/logs/messages",
+      "/home/pi/.igor/logs/messages",
       { recursive: true },
     );
-    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/igor/data/logs/memory", {
+    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/.igor/logs/memory", {
       recursive: true,
     });
-    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/igor/data/logs/tasks", {
+    expect(mMkdirSync).toHaveBeenCalledWith("/home/pi/.igor/logs/tasks", {
       recursive: true,
     });
   });
@@ -97,8 +97,8 @@ describe("defaultStorageConfig", () => {
 
     expect(config.projectsDir).toBe("/home/testuser/projects");
     expect(config.igorDir).toBe("/home/testuser/igor");
-    expect(config.worktreeDir).toBe("/home/testuser/igor/worktrees");
-    expect(config.logsDir).toBe("/home/testuser/igor/data/logs");
+    expect(config.worktreeDir).toBe("/home/testuser/.igor/worktrees");
+    expect(config.logsDir).toBe("/home/testuser/.igor/logs");
 
     process.env.HOME = original;
   });
