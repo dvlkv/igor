@@ -7,20 +7,67 @@ import {
   existsSync,
   readdirSync,
   statSync,
+  lstatSync,
+  readlinkSync,
 } from "node:fs";
 import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 
 // --- Config ---
 
-const STATE_FILE =
-  process.env.IGOR_STATE_FILE || "/home/pi/igor/harness/state.json";
-const PROJECTS_DIR = process.env.IGOR_PROJECTS_DIR || "/home/pi/projects";
-const IGOR_DIR = process.env.IGOR_DIR || "/home/pi/igor";
+const DOT_IGOR = join(homedir(), ".igor");
+const TASKS_FILE = process.env.IGOR_TASKS_FILE || join(DOT_IGOR, "tasks.json");
+const PROJECTS_FILE =
+  process.env.IGOR_PROJECTS_FILE || join(DOT_IGOR, "projects.json");
+const PROJECTS_DIR = process.env.IGOR_PROJECTS_DIR || join(homedir(), "projects");
+const IGOR_DIR = process.env.IGOR_DIR || join(homedir(), "igor");
 
-// --- Helpers ---
+// Also read legacy state.json for backward compat
+const LEGACY_STATE_FILE =
+  process.env.IGOR_STATE_FILE || join(IGOR_DIR, "harness", "state.json");
 
-interface TaskSession {
+// --- Types (mirrors harness/src/types.ts) ---
+
+interface Task {
+  taskId: string;
+  projectName: string;
+  source: string;
+  title: string;
+  description?: string;
+  worktreePath: string;
+  branch: string;
+  sessionId: string;
+  status: "active" | "completed" | "abandoned";
+  createdAt: string;
+  completedAt?: string;
+  claudePid?: number;
+  telegramThreadId?: string;
+  slackThreadTs?: string;
+  slackChannelId?: string;
+  linearIssueId?: string;
+  linearIssueUrl?: string;
+  githubIssueNumber?: number;
+  githubIssueUrl?: string;
+}
+
+interface TaskData {
+  tasks: Task[];
+}
+
+interface Project {
+  name: string;
+  path: string;
+  remoteUrl?: string;
+  createdAt: string;
+}
+
+interface ProjectData {
+  projects: Project[];
+}
+
+// Legacy format from state.json
+interface LegacyTaskSession {
   taskId: string;
   source: string;
   title: string;
@@ -34,19 +81,116 @@ interface TaskSession {
   claudePid?: number;
 }
 
-interface StateData {
-  sessions: TaskSession[];
+interface LegacyStateData {
+  sessions: LegacyTaskSession[];
 }
 
-function readState(): StateData {
-  if (!existsSync(STATE_FILE)) {
-    return { sessions: [] };
+// --- Helpers ---
+
+function readTasks(): Task[] {
+  // Read new-format tasks
+  if (existsSync(TASKS_FILE)) {
+    try {
+      const data: TaskData = JSON.parse(readFileSync(TASKS_FILE, "utf-8"));
+      return data.tasks;
+    } catch {
+      // fall through
+    }
   }
-  return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
+
+  // Fall back to legacy state.json, converting to Task shape
+  if (existsSync(LEGACY_STATE_FILE)) {
+    try {
+      const data: LegacyStateData = JSON.parse(
+        readFileSync(LEGACY_STATE_FILE, "utf-8"),
+      );
+      return data.sessions.map((s) => ({
+        taskId: s.taskId,
+        projectName: "igor",
+        source: s.source,
+        title: s.title,
+        description: undefined,
+        worktreePath: s.worktreePath,
+        branch: s.branch,
+        sessionId: s.sessionId,
+        status: s.status,
+        createdAt: s.createdAt,
+        claudePid: s.claudePid,
+        telegramThreadId: s.telegramThreadId,
+      }));
+    } catch {
+      // fall through
+    }
+  }
+
+  return [];
 }
 
-function writeState(data: StateData): void {
-  writeFileSync(STATE_FILE, JSON.stringify(data, null, 2), "utf-8");
+function writeTasks(tasks: Task[]): void {
+  const data: TaskData = { tasks };
+  writeFileSync(TASKS_FILE, JSON.stringify(data, null, 2), "utf-8");
+}
+
+function readProjects(): Project[] {
+  if (existsSync(PROJECTS_FILE)) {
+    try {
+      const data: ProjectData = JSON.parse(
+        readFileSync(PROJECTS_FILE, "utf-8"),
+      );
+      return data.projects;
+    } catch {
+      // fall through
+    }
+  }
+  return [];
+}
+
+function discoverProjectDirs(): { name: string; path: string; registered: boolean }[] {
+  const registered = readProjects();
+  const seen = new Set<string>();
+  const result: { name: string; path: string; registered: boolean }[] = [];
+
+  // Registered projects first
+  for (const p of registered) {
+    seen.add(p.name);
+    result.push({ name: p.name, path: p.path, registered: true });
+  }
+
+  // Always include igor itself
+  if (!seen.has("igor")) {
+    result.push({ name: "igor", path: IGOR_DIR, registered: false });
+    seen.add("igor");
+  }
+
+  // Scan projects directory for unregistered repos
+  if (existsSync(PROJECTS_DIR)) {
+    try {
+      for (const entry of readdirSync(PROJECTS_DIR)) {
+        if (seen.has(entry)) continue;
+        const fullPath = join(PROJECTS_DIR, entry);
+        try {
+          const st = lstatSync(fullPath);
+          const targetPath = st.isSymbolicLink()
+            ? resolve(readlinkSync(fullPath))
+            : fullPath;
+          if (
+            existsSync(targetPath) &&
+            statSync(targetPath).isDirectory() &&
+            existsSync(join(targetPath, ".git"))
+          ) {
+            result.push({ name: entry, path: targetPath, registered: false });
+            seen.add(entry);
+          }
+        } catch {
+          // skip broken entries
+        }
+      }
+    } catch {
+      // ignore read errors
+    }
+  }
+
+  return result;
 }
 
 function isPidAlive(pid: number): boolean {
@@ -102,57 +246,44 @@ function listWorktreesForRepo(repoPath: string): WorktreeEntry[] {
   }
 }
 
-function discoverProjectDirs(): { name: string; path: string }[] {
-  const projects: { name: string; path: string }[] = [];
-
-  // Always include igor itself
-  projects.push({ name: "igor", path: IGOR_DIR });
-
-  // Scan projects directory
-  if (existsSync(PROJECTS_DIR)) {
-    try {
-      for (const entry of readdirSync(PROJECTS_DIR)) {
-        const fullPath = join(PROJECTS_DIR, entry);
-        if (
-          statSync(fullPath).isDirectory() &&
-          existsSync(join(fullPath, ".git"))
-        ) {
-          projects.push({ name: entry, path: fullPath });
-        }
-      }
-    } catch {
-      // ignore read errors
-    }
-  }
-
-  return projects;
-}
-
 // --- MCP Server ---
 
 const server = new McpServer({
   name: "igor-context",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 // --- Tools ---
 
 server.tool(
   "list_tasks",
-  "List igor task sessions with optional status filter",
-  { status: z.enum(["active", "completed", "all"]).optional().describe("Filter by status (default: all)") },
-  async ({ status }) => {
-    const state = readState();
+  "List igor tasks with optional status filter",
+  {
+    status: z
+      .enum(["active", "completed", "abandoned", "all"])
+      .optional()
+      .describe("Filter by status (default: all)"),
+    project: z.string().optional().describe("Filter by project name"),
+  },
+  async ({ status, project }) => {
+    let tasks = readTasks();
     const filter = status ?? "all";
-    const sessions =
-      filter === "all"
-        ? state.sessions
-        : state.sessions.filter((s) => s.status === filter);
 
-    const lines = sessions.map((s) => {
+    if (filter !== "all") {
+      tasks = tasks.filter((t) => t.status === filter);
+    }
+    if (project) {
+      tasks = tasks.filter((t) => t.projectName === project);
+    }
+
+    const lines = tasks.map((t) => {
       const alive =
-        s.claudePid != null ? (isPidAlive(s.claudePid) ? "alive" : "dead") : "no-pid";
-      return `[${s.status}] ${s.taskId}: ${s.title || "(untitled)"} | branch=${s.branch} | pid=${s.claudePid ?? "?"} (${alive}) | ${s.source} | ${s.createdAt}`;
+        t.claudePid != null
+          ? isPidAlive(t.claudePid)
+            ? "alive"
+            : "dead"
+          : "no-pid";
+      return `[${t.status}] ${t.taskId}: ${t.title || "(untitled)"} | project=${t.projectName} | branch=${t.branch} | pid=${t.claudePid ?? "?"} (${alive}) | ${t.source} | ${t.createdAt}`;
     });
 
     return {
@@ -171,18 +302,20 @@ server.tool(
   "Get full details of a specific task by ID",
   { task_id: z.string().describe("Task ID to look up") },
   async ({ task_id }) => {
-    const state = readState();
-    const session = state.sessions.find((s) => s.taskId === task_id);
+    const tasks = readTasks();
+    const task = tasks.find((t) => t.taskId === task_id);
 
-    if (!session) {
+    if (!task) {
       return {
-        content: [{ type: "text" as const, text: `Task "${task_id}" not found.` }],
+        content: [
+          { type: "text" as const, text: `Task "${task_id}" not found.` },
+        ],
       };
     }
 
     const alive =
-      session.claudePid != null
-        ? isPidAlive(session.claudePid)
+      task.claudePid != null
+        ? isPidAlive(task.claudePid)
           ? "alive"
           : "dead"
         : "no-pid";
@@ -191,7 +324,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify({ ...session, processAlive: alive }, null, 2),
+          text: JSON.stringify({ ...task, processAlive: alive }, null, 2),
         },
       ],
     };
@@ -200,32 +333,42 @@ server.tool(
 
 server.tool(
   "update_task",
-  "Update a task session (e.g. mark as completed)",
+  "Update a task (e.g. mark as completed or abandoned)",
   {
     task_id: z.string().describe("Task ID to update"),
-    status: z.enum(["active", "completed"]).optional().describe("New status"),
+    status: z
+      .enum(["active", "completed", "abandoned"])
+      .optional()
+      .describe("New status"),
     title: z.string().optional().describe("New title"),
   },
   async ({ task_id, status, title }) => {
-    const state = readState();
-    const session = state.sessions.find((s) => s.taskId === task_id);
+    const tasks = readTasks();
+    const task = tasks.find((t) => t.taskId === task_id);
 
-    if (!session) {
+    if (!task) {
       return {
-        content: [{ type: "text" as const, text: `Task "${task_id}" not found.` }],
+        content: [
+          { type: "text" as const, text: `Task "${task_id}" not found.` },
+        ],
       };
     }
 
-    if (status) session.status = status;
-    if (title) session.title = title;
+    if (status) {
+      task.status = status;
+      if (status === "completed" || status === "abandoned") {
+        task.completedAt = new Date().toISOString();
+      }
+    }
+    if (title) task.title = title;
 
-    writeState(state);
+    writeTasks(tasks);
 
     return {
       content: [
         {
           type: "text" as const,
-          text: `Task "${task_id}" updated. ${JSON.stringify({ status: session.status, title: session.title })}`,
+          text: `Task "${task_id}" updated. ${JSON.stringify({ status: task.status, title: task.title })}`,
         },
       ],
     };
@@ -236,7 +379,10 @@ server.tool(
   "list_worktrees",
   "List git worktrees across all known projects",
   {
-    project: z.string().optional().describe("Filter by project name (optional)"),
+    project: z
+      .string()
+      .optional()
+      .describe("Filter by project name (optional)"),
   },
   async ({ project }) => {
     const projects = discoverProjectDirs();
@@ -274,8 +420,7 @@ server.tool(
       content: [
         {
           type: "text" as const,
-          text:
-            lines.length > 0 ? lines.join("\n") : "No worktrees found.",
+          text: lines.length > 0 ? lines.join("\n") : "No worktrees found.",
         },
       ],
     };
@@ -284,22 +429,27 @@ server.tool(
 
 server.tool(
   "list_projects",
-  "List all known project directories",
+  "List all known project directories (registered + discovered)",
   {},
   async () => {
     const projects = discoverProjectDirs();
 
     const lines = projects.map((p) => {
-      const hasWorktrees = listWorktreesForRepo(p.path).length > 1;
-      return `${p.name}: ${p.path}${hasWorktrees ? " (has worktrees)" : ""}`;
+      const worktreeCount = listWorktreesForRepo(p.path).length;
+      const extra = [
+        p.registered ? "registered" : "discovered",
+        worktreeCount > 1 ? `${worktreeCount} worktrees` : undefined,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      return `${p.name}: ${p.path} (${extra})`;
     });
 
     return {
       content: [
         {
           type: "text" as const,
-          text:
-            lines.length > 0 ? lines.join("\n") : "No projects found.",
+          text: lines.length > 0 ? lines.join("\n") : "No projects found.",
         },
       ],
     };
@@ -311,27 +461,23 @@ server.tool(
   "List active Claude sessions with process status",
   {},
   async () => {
-    const state = readState();
-    const active = state.sessions.filter((s) => s.status === "active");
+    const tasks = readTasks().filter((t) => t.status === "active");
 
-    const lines = active.map((s) => {
+    const lines = tasks.map((t) => {
       const alive =
-        s.claudePid != null
-          ? isPidAlive(s.claudePid)
+        t.claudePid != null
+          ? isPidAlive(t.claudePid)
             ? "alive"
             : "dead"
           : "no-pid";
-      return `${s.sessionId}: pid=${s.claudePid ?? "?"} (${alive}) | task=${s.taskId} "${s.title || "(untitled)"}" | ${s.source}`;
+      return `${t.sessionId}: pid=${t.claudePid ?? "?"} (${alive}) | task=${t.taskId} "${t.title || "(untitled)"}" | project=${t.projectName} | ${t.source}`;
     });
 
     return {
       content: [
         {
           type: "text" as const,
-          text:
-            lines.length > 0
-              ? lines.join("\n")
-              : "No active sessions.",
+          text: lines.length > 0 ? lines.join("\n") : "No active sessions.",
         },
       ],
     };
@@ -345,18 +491,23 @@ server.tool(
     task_id: z.string().describe("Task/session ID to kill"),
   },
   async ({ task_id }) => {
-    const state = readState();
-    const session = state.sessions.find(
-      (s) => s.taskId === task_id || s.sessionId === task_id,
+    const tasks = readTasks();
+    const task = tasks.find(
+      (t) => t.taskId === task_id || t.sessionId === task_id,
     );
 
-    if (!session) {
+    if (!task) {
       return {
-        content: [{ type: "text" as const, text: `Session "${task_id}" not found.` }],
+        content: [
+          {
+            type: "text" as const,
+            text: `Session "${task_id}" not found.`,
+          },
+        ],
       };
     }
 
-    if (!session.claudePid) {
+    if (!task.claudePid) {
       return {
         content: [
           {
@@ -367,33 +518,31 @@ server.tool(
       };
     }
 
-    if (!isPidAlive(session.claudePid)) {
+    if (!isPidAlive(task.claudePid)) {
       return {
         content: [
           {
             type: "text" as const,
-            text: `Session "${task_id}" (pid=${session.claudePid}) is already dead.`,
+            text: `Session "${task_id}" (pid=${task.claudePid}) is already dead.`,
           },
         ],
       };
     }
 
     try {
-      // Send SIGTERM first
-      process.kill(session.claudePid, "SIGTERM");
+      process.kill(task.claudePid, "SIGTERM");
 
-      // Wait a moment, then check and SIGKILL if needed
       await new Promise((r) => setTimeout(r, 2000));
 
-      if (isPidAlive(session.claudePid)) {
-        process.kill(session.claudePid, "SIGKILL");
+      if (isPidAlive(task.claudePid)) {
+        process.kill(task.claudePid, "SIGKILL");
       }
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Session "${task_id}" (pid=${session.claudePid}) killed.`,
+            text: `Session "${task_id}" (pid=${task.claudePid}) killed.`,
           },
         ],
       };
