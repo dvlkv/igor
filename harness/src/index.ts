@@ -98,7 +98,6 @@ const orchestrator = new Orchestrator({
   generalProjectDir: storage.igorDir,
   generalClaudeArgs: config.general.claudeArgs,
   generalSystemPrompt: config.general.systemPrompt,
-  taskConfig: config.task,
 });
 
 if (telegramAdapter) {

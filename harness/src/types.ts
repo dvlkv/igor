@@ -159,10 +159,6 @@ export interface HarnessConfig {
     claudeArgs: string[];
     systemPrompt?: string;
   };
-  task: {
-    claudeArgs: string[];
-    systemPrompt?: string;
-  };
   memory: {
     ingestIntervalMs: number;
   };
