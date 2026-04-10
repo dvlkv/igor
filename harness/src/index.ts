@@ -139,12 +139,19 @@ app.get("/health", (_req, res) => {
   });
 });
 
-async function main() {
-  if (linearAdapter || githubAdapter) {
-    app.listen(config.webhookPort, () => {
-      console.log(`Webhook server listening on port ${config.webhookPort}`);
-    });
+app.post("/tasks/:taskId/complete", async (req, res) => {
+  try {
+    await orchestrator.completeTask(req.params.taskId);
+    res.json({ status: "ok", taskId: req.params.taskId });
+  } catch (err: any) {
+    res.status(500).json({ status: "error", message: err.message });
   }
+});
+
+async function main() {
+  app.listen(config.webhookPort, () => {
+    console.log(`HTTP server listening on port ${config.webhookPort}`);
+  });
 
   await Promise.all(adapters.map((a) => a.start()));
   memoryIngestion.start();
