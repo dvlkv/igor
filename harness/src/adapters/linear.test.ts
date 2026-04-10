@@ -81,4 +81,48 @@ describe("LinearAdapter", () => {
       }),
     );
   });
+
+  it("emits task completed on issue cancelled", () => {
+    const adapter = new LinearAdapter({
+      webhookSecret: "test-secret",
+      assigneeId: "user-igor",
+    });
+
+    const completedIssues: string[] = [];
+    adapter.onTaskCompleted((issueId) => completedIssues.push(issueId));
+
+    adapter.handleWebhook({
+      action: "update",
+      type: "Issue",
+      data: {
+        id: "issue-1",
+        state: { name: "Cancelled" },
+        assignee: { id: "user-igor" },
+      },
+    });
+
+    expect(completedIssues).toEqual(["issue-1"]);
+  });
+
+  it("ignores non-cancelled issue updates", () => {
+    const adapter = new LinearAdapter({
+      webhookSecret: "test-secret",
+      assigneeId: "user-igor",
+    });
+
+    const completedIssues: string[] = [];
+    adapter.onTaskCompleted((issueId) => completedIssues.push(issueId));
+
+    adapter.handleWebhook({
+      action: "update",
+      type: "Issue",
+      data: {
+        id: "issue-1",
+        state: { name: "In Progress" },
+        assignee: { id: "user-igor" },
+      },
+    });
+
+    expect(completedIssues).toEqual([]);
+  });
 });

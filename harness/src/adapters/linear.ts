@@ -17,6 +17,7 @@ export class LinearAdapter implements ChannelAdapter {
   private config: LinearConfig;
   private messageHandlers: Array<(msg: IncomingMessage) => void> = [];
   private taskHandlers: Array<(task: TaskAssignment) => void> = [];
+  private taskCompletedHandlers: Array<(issueId: string) => void> = [];
 
   constructor(config: LinearConfig) {
     this.config = config;
@@ -28,6 +29,10 @@ export class LinearAdapter implements ChannelAdapter {
 
   onTaskAssigned(handler: (task: TaskAssignment) => void): void {
     this.taskHandlers.push(handler);
+  }
+
+  onTaskCompleted(handler: (issueId: string) => void): void {
+    this.taskCompletedHandlers.push(handler);
   }
 
   handleWebhook(payload: any): void {
@@ -60,6 +65,17 @@ export class LinearAdapter implements ChannelAdapter {
 
       for (const handler of this.messageHandlers) {
         handler(msg);
+      }
+    }
+
+    if (
+      payload.type === "Issue" &&
+      payload.action === "update" &&
+      payload.data?.state?.name === "Cancelled"
+    ) {
+      const issueId = String(payload.data.id);
+      for (const handler of this.taskCompletedHandlers) {
+        handler(issueId);
       }
     }
   }
