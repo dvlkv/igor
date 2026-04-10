@@ -75,4 +75,44 @@ describe("GitHubAdapter", () => {
     expect(messages[0].text).toBe("Looks good to me");
     expect(messages[0].threadId).toBe("org/repo#42");
   });
+
+  it("emits task completed on PR merged", () => {
+    const adapter = new GitHubAdapter({
+      webhookSecret: "test-secret",
+      assigneeLogin: "igor-bot",
+    });
+
+    const completedBranches: string[] = [];
+    adapter.onTaskCompleted((branch) => completedBranches.push(branch));
+
+    adapter.handleWebhook("pull_request", {
+      action: "closed",
+      pull_request: {
+        merged: true,
+        head: { ref: "igor/LIN-123" },
+      },
+    });
+
+    expect(completedBranches).toEqual(["igor/LIN-123"]);
+  });
+
+  it("ignores closed but not merged PR", () => {
+    const adapter = new GitHubAdapter({
+      webhookSecret: "test-secret",
+      assigneeLogin: "igor-bot",
+    });
+
+    const completedBranches: string[] = [];
+    adapter.onTaskCompleted((branch) => completedBranches.push(branch));
+
+    adapter.handleWebhook("pull_request", {
+      action: "closed",
+      pull_request: {
+        merged: false,
+        head: { ref: "igor/LIN-123" },
+      },
+    });
+
+    expect(completedBranches).toEqual([]);
+  });
 });

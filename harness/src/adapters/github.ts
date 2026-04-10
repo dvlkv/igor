@@ -17,6 +17,7 @@ export class GitHubAdapter implements ChannelAdapter {
   private config: GitHubConfig;
   private messageHandlers: Array<(msg: IncomingMessage) => void> = [];
   private taskHandlers: Array<(task: TaskAssignment) => void> = [];
+  private taskCompletedHandlers: Array<(branch: string) => void> = [];
 
   constructor(config: GitHubConfig) {
     this.config = config;
@@ -28,6 +29,10 @@ export class GitHubAdapter implements ChannelAdapter {
 
   onTaskAssigned(handler: (task: TaskAssignment) => void): void {
     this.taskHandlers.push(handler);
+  }
+
+  onTaskCompleted(handler: (branch: string) => void): void {
+    this.taskCompletedHandlers.push(handler);
   }
 
   handleWebhook(event: string, payload: any): void {
@@ -65,6 +70,17 @@ export class GitHubAdapter implements ChannelAdapter {
       };
       for (const handler of this.messageHandlers) {
         handler(msg);
+      }
+    }
+
+    if (
+      event === "pull_request" &&
+      payload.action === "closed" &&
+      payload.pull_request?.merged === true
+    ) {
+      const branch = payload.pull_request.head.ref;
+      for (const handler of this.taskCompletedHandlers) {
+        handler(branch);
       }
     }
   }
