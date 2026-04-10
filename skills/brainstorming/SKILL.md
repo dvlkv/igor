@@ -29,8 +29,9 @@ You MUST create a task for each of these items and complete them in order:
 6. **Present design** — in sections scaled to their complexity, get user approval after each section
 7. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
 8. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-9. **User reviews written spec** — ask user to review the spec file before proceeding
-10. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+9. **Create Draft PR** — push branch, create Draft PR with the spec as the body
+10. **User reviews spec via Draft PR** — ask user to review before proceeding
+11. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
 
@@ -121,12 +122,19 @@ After writing the spec document, look at it with fresh eyes:
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
+**Draft PR:**
+After the spec is committed, create a Draft PR with the spec as the PR body:
+
+1. Push the branch: `git push -u origin HEAD`
+2. Create Draft PR: `gh pr create --draft` with the spec contents in the body
+3. Report the PR link to the user
+
 **User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+After the Draft PR is created, ask the user to review the spec before proceeding:
 
-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+> "Draft PR created: `<url>`. Please review the spec and let me know if you want to make any changes before we start writing the implementation plan."
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+Wait for the user's response. If they request changes, make them, push, and re-run the spec review loop. Only proceed once the user approves.
 
 **Implementation:**
 

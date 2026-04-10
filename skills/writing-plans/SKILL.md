@@ -131,16 +131,9 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
-## After Plan: Draft PR
-
-After saving the plan, **do NOT start implementation yet**. Instead:
-
-1. **REQUIRED SUB-SKILL:** Invoke `/draft-pr-planning` to create a Draft PR with the plan as the PR body.
-2. Only after the Draft PR is created, offer the execution choice.
-
 ## Execution Handoff
 
-After the Draft PR exists, offer the execution choice:
+After saving the plan, update the Draft PR body to include the implementation plan, then offer the execution choice:
 
 **"Plan complete and Draft PR created. Two execution options:**
 
