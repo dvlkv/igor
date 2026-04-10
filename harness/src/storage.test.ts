@@ -26,6 +26,7 @@ function makeConfig(overrides: Partial<StorageConfig> = {}): StorageConfig {
     logsDir: "/home/pi/.igor/logs",
     projectsFile: "/home/pi/.igor/projects.json",
     tasksFile: "/home/pi/.igor/tasks.json",
+    memoryBufferDir: "/home/pi/.igor/memory-buffer",
     ...overrides,
   };
 }

@@ -1,10 +1,9 @@
 import express from "express";
 import { loadConfig } from "./config.js";
-import { StateStore } from "./state.js";
 import { TaskStore } from "./task-store.js";
 import { ProjectStore } from "./project-store.js";
 import { Logger } from "./logger.js";
-import { initStorage, defaultStorageConfig } from "./storage.js";
+import { initStorage } from "./storage.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
@@ -18,17 +17,15 @@ const configPath = process.argv[2] ?? "harness.config.json";
 const config = loadConfig(configPath);
 
 // Initialize storage layout (directories + symlinks)
-const storageConfig =
-  config.storage ?? defaultStorageConfig(config.general.projectDir);
-initStorage(storageConfig);
+const storage = config.storage;
+initStorage(storage);
 
-const logger = new Logger(storageConfig.logsDir);
-const stateStore = new StateStore(config.stateFile);
-const taskStore = new TaskStore(storageConfig.tasksFile);
-const projectStore = new ProjectStore(storageConfig.projectsFile);
+const logger = new Logger(storage.logsDir);
+const taskStore = new TaskStore(storage.tasksFile);
+const projectStore = new ProjectStore(storage.projectsFile);
 const sessionManager = new ClaudeSessionManager();
 const memoryIngestion = new MemoryIngestion({
-  bufferDir: config.memory.bufferDir,
+  bufferDir: storage.memoryBufferDir,
   ingestIntervalMs: config.memory.ingestIntervalMs,
   logger,
 });
@@ -37,13 +34,11 @@ const memoryIngestion = new MemoryIngestion({
 if (!projectStore.get("igor")) {
   projectStore.register({
     name: "igor",
-    path: storageConfig.igorDir,
+    path: storage.igorDir,
     remoteUrl: "git@github.com:dvlkv/igor.git",
     createdAt: new Date().toISOString(),
   });
-  logger.logProjectEvent("igor", "registered", {
-    path: storageConfig.igorDir,
-  });
+  logger.logProjectEvent("igor", "registered", { path: storage.igorDir });
 }
 
 const adapters: ChannelAdapter[] = [];
@@ -96,11 +91,11 @@ if (config.github.webhookSecret) {
 const orchestrator = new Orchestrator({
   adapters,
   telegram: telegramAdapter,
-  stateStore,
+  taskStore,
   sessionManager,
   memoryIngestion,
-  worktreeDir: config.worktreeDir,
-  generalProjectDir: config.general.projectDir,
+  worktreeDir: storage.worktreeDir,
+  generalProjectDir: storage.igorDir,
   generalClaudeArgs: config.general.claudeArgs,
   generalSystemPrompt: config.general.systemPrompt,
 });
@@ -140,7 +135,7 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     sessions: sessionManager.listSessions(),
-    activeTasks: stateStore.getActive().length,
+    activeTasks: taskStore.getActive().length,
   });
 });
 

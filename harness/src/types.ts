@@ -133,6 +133,8 @@ export interface StorageConfig {
   projectsFile: string;
   /** Path to tasks registry JSON */
   tasksFile: string;
+  /** Directory for memory ingestion buffers */
+  memoryBufferDir: string;
 }
 
 export interface HarnessConfig {
@@ -155,17 +157,11 @@ export interface HarnessConfig {
   };
   general: {
     claudeArgs: string[];
-    projectDir: string;
     systemPrompt?: string;
   };
   memory: {
     ingestIntervalMs: number;
-    bufferDir: string;
   };
   storage: StorageConfig;
   webhookPort: number;
-  /** @deprecated Use storage.tasksFile */
-  stateFile: string;
-  /** @deprecated Use storage.worktreeDir */
-  worktreeDir: string;
 }

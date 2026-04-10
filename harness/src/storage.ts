@@ -19,6 +19,7 @@ import type { StorageConfig } from "./types.js";
  *     projects.json          — project registry
  *     tasks.json             — task registry
  *     worktrees/             — git worktrees for active tasks
+ *     memory-buffer/         — temporary memory ingestion buffers
  *     logs/
  *       messages/            — raw JSONL message logs
  *       memory/              — memory ingestion logs
@@ -35,6 +36,7 @@ export function defaultStorageConfig(igorDir: string): StorageConfig {
     logsDir: join(dotIgor, "logs"),
     projectsFile: join(dotIgor, "projects.json"),
     tasksFile: join(dotIgor, "tasks.json"),
+    memoryBufferDir: join(dotIgor, "memory-buffer"),
   };
 }
 

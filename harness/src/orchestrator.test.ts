@@ -3,19 +3,23 @@ import type {
   ChannelAdapter,
   IncomingMessage,
   TaskAssignment,
-  TaskSession,
+  Task,
 } from "./types.js";
 
-vi.mock("./state.js", () => {
+vi.mock("./task-store.js", () => {
   return {
-    StateStore: vi.fn().mockImplementation(function () {
+    TaskStore: vi.fn().mockImplementation(function () {
       return {
         save: vi.fn(),
         get: vi.fn(),
         update: vi.fn(),
         getAll: vi.fn().mockReturnValue([]),
         getActive: vi.fn().mockReturnValue([]),
+        getByProject: vi.fn().mockReturnValue([]),
         findByTelegramThread: vi.fn(),
+        findBySlackThread: vi.fn(),
+        findByLinearIssue: vi.fn(),
+        findByGithubIssue: vi.fn(),
       };
     }),
   };
@@ -61,7 +65,7 @@ vi.mock("node:child_process", () => {
 });
 
 import { Orchestrator } from "./orchestrator.js";
-import { StateStore } from "./state.js";
+import { TaskStore } from "./task-store.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 
@@ -111,7 +115,7 @@ function createMockTelegramAdapter() {
 }
 
 describe("Orchestrator", () => {
-  let stateStore: InstanceType<typeof StateStore>;
+  let taskStore: InstanceType<typeof TaskStore>;
   let sessionManager: InstanceType<typeof ClaudeSessionManager>;
   let memoryIngestion: InstanceType<typeof MemoryIngestion>;
   let telegramAdapter: ReturnType<typeof createMockTelegramAdapter>;
@@ -119,7 +123,7 @@ describe("Orchestrator", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    stateStore = new StateStore("/tmp/test-state.json");
+    taskStore = new TaskStore("/tmp/test-tasks.json");
     sessionManager = new ClaudeSessionManager();
     memoryIngestion = new MemoryIngestion({
       bufferDir: "/tmp/buffers",
@@ -129,11 +133,11 @@ describe("Orchestrator", () => {
     linearAdapter = createMockAdapter("linear");
   });
 
-  it("creates task session on assignment", async () => {
+  it("creates task on assignment", async () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -155,17 +159,20 @@ describe("Orchestrator", () => {
       "Task: Fix the bug",
     );
     expect(sessionManager.createSession).toHaveBeenCalled();
-    expect(stateStore.save).toHaveBeenCalled();
+    expect(taskStore.save).toHaveBeenCalled();
 
-    const savedSession = (stateStore.save as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as TaskSession;
-    expect(savedSession.sessionId).toBe("LIN-123");
-    expect(savedSession.claudePid).toBe(12345);
+    const savedTask = (taskStore.save as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Task;
+    expect(savedTask.sessionId).toBe("LIN-123");
+    expect(savedTask.claudePid).toBe(12345);
+    expect(savedTask.projectName).toBe("igor");
+    expect(savedTask.linearIssueUrl).toBe("https://linear.app/issue/LIN-123");
   });
 
   it("routes telegram message to session via stdin", async () => {
-    const mockSession: TaskSession = {
+    const mockTask: Task = {
       taskId: "LIN-123",
+      projectName: "igor",
       source: "linear",
       title: "Fix the bug",
       worktreePath: "/tmp/worktrees/LIN-123",
@@ -177,14 +184,14 @@ describe("Orchestrator", () => {
     };
 
     (
-      stateStore.findByTelegramThread as ReturnType<typeof vi.fn>
-    ).mockReturnValue(mockSession);
+      taskStore.findByTelegramThread as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
     (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -214,7 +221,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -251,7 +258,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -298,7 +305,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -365,7 +372,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -406,7 +413,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
