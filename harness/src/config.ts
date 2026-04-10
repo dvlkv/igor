@@ -22,5 +22,13 @@ function resolveEnvVars(obj: unknown): unknown {
 export function loadConfig(filePath: string): HarnessConfig {
   const raw = readFileSync(filePath, "utf-8");
   const parsed = JSON.parse(raw);
-  return resolveEnvVars(parsed) as HarnessConfig;
+  const resolved = resolveEnvVars(parsed) as Record<string, unknown>;
+
+  if (!resolved.storage) {
+    throw new Error(
+      "Missing required 'storage' block in config. See harness.config.json.",
+    );
+  }
+
+  return resolved as unknown as HarnessConfig;
 }

@@ -2,10 +2,12 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { exec } from "node:child_process";
 import { join } from "node:path";
 import type { IncomingMessage } from "./types.js";
+import type { Logger } from "./logger.js";
 
 export interface MemoryIngestionOptions {
   bufferDir: string;
   ingestIntervalMs: number;
+  logger?: Logger;
 }
 
 export class MemoryIngestion {
@@ -13,16 +15,27 @@ export class MemoryIngestion {
   private intervalHandle: ReturnType<typeof setInterval> | undefined;
   private readonly bufferDir: string;
   private readonly ingestIntervalMs: number;
+  private readonly logger?: Logger;
 
   constructor(opts: MemoryIngestionOptions) {
     this.bufferDir = opts.bufferDir;
     this.ingestIntervalMs = opts.ingestIntervalMs;
+    this.logger = opts.logger;
   }
 
   buffer(project: string, message: IncomingMessage): void {
     const list = this.buffers.get(project) ?? [];
     list.push(message);
     this.buffers.set(project, list);
+
+    // Log every ingested message
+    this.logger?.logMessage(
+      project,
+      message.channelType,
+      message.author,
+      message.text,
+      message.metadata,
+    );
   }
 
   getBufferSize(project: string): number {
@@ -38,6 +51,9 @@ export class MemoryIngestion {
 
       const filePath = join(this.bufferDir, `${project}.json`);
       writeFileSync(filePath, JSON.stringify(messages, null, 2));
+
+      // Log the memory ingestion event
+      this.logger?.logMemoryIngestion(project, messages.length, filePath);
 
       await new Promise<void>((resolve, reject) => {
         exec(`mempalace mine ${filePath} --mode convos`, (err) => {

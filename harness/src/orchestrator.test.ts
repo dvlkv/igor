@@ -3,19 +3,23 @@ import type {
   ChannelAdapter,
   IncomingMessage,
   TaskAssignment,
-  TaskSession,
+  Task,
 } from "./types.js";
 
-vi.mock("./state.js", () => {
+vi.mock("./task-store.js", () => {
   return {
-    StateStore: vi.fn().mockImplementation(function () {
+    TaskStore: vi.fn().mockImplementation(function () {
       return {
         save: vi.fn(),
         get: vi.fn(),
         update: vi.fn(),
         getAll: vi.fn().mockReturnValue([]),
         getActive: vi.fn().mockReturnValue([]),
+        getByProject: vi.fn().mockReturnValue([]),
         findByTelegramThread: vi.fn(),
+        findBySlackThread: vi.fn(),
+        findByLinearIssue: vi.fn(),
+        findByGithubIssue: vi.fn(),
       };
     }),
   };
@@ -33,6 +37,7 @@ vi.mock("./session-manager.js", () => {
         sendMessage: vi.fn().mockReturnValue(true),
         onOutput: vi.fn(),
         onToolUse: vi.fn(),
+        onAssistantText: vi.fn(),
       };
     }),
   };
@@ -60,7 +65,7 @@ vi.mock("node:child_process", () => {
 });
 
 import { Orchestrator } from "./orchestrator.js";
-import { StateStore } from "./state.js";
+import { TaskStore } from "./task-store.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 
@@ -110,7 +115,7 @@ function createMockTelegramAdapter() {
 }
 
 describe("Orchestrator", () => {
-  let stateStore: InstanceType<typeof StateStore>;
+  let taskStore: InstanceType<typeof TaskStore>;
   let sessionManager: InstanceType<typeof ClaudeSessionManager>;
   let memoryIngestion: InstanceType<typeof MemoryIngestion>;
   let telegramAdapter: ReturnType<typeof createMockTelegramAdapter>;
@@ -118,7 +123,7 @@ describe("Orchestrator", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    stateStore = new StateStore("/tmp/test-state.json");
+    taskStore = new TaskStore("/tmp/test-tasks.json");
     sessionManager = new ClaudeSessionManager();
     memoryIngestion = new MemoryIngestion({
       bufferDir: "/tmp/buffers",
@@ -128,11 +133,11 @@ describe("Orchestrator", () => {
     linearAdapter = createMockAdapter("linear");
   });
 
-  it("creates task session on assignment", async () => {
+  it("creates task on assignment", async () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -154,17 +159,20 @@ describe("Orchestrator", () => {
       "Task: Fix the bug",
     );
     expect(sessionManager.createSession).toHaveBeenCalled();
-    expect(stateStore.save).toHaveBeenCalled();
+    expect(taskStore.save).toHaveBeenCalled();
 
-    const savedSession = (stateStore.save as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as TaskSession;
-    expect(savedSession.sessionId).toBe("LIN-123");
-    expect(savedSession.claudePid).toBe(12345);
+    const savedTask = (taskStore.save as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as Task;
+    expect(savedTask.sessionId).toBe("LIN-123");
+    expect(savedTask.claudePid).toBe(12345);
+    expect(savedTask.projectName).toBe("igor");
+    expect(savedTask.linearIssueUrl).toBe("https://linear.app/issue/LIN-123");
   });
 
   it("routes telegram message to session via stdin", async () => {
-    const mockSession: TaskSession = {
+    const mockTask: Task = {
       taskId: "LIN-123",
+      projectName: "igor",
       source: "linear",
       title: "Fix the bug",
       worktreePath: "/tmp/worktrees/LIN-123",
@@ -176,14 +184,14 @@ describe("Orchestrator", () => {
     };
 
     (
-      stateStore.findByTelegramThread as ReturnType<typeof vi.fn>
-    ).mockReturnValue(mockSession);
+      taskStore.findByTelegramThread as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
     (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -213,7 +221,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -250,7 +258,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -279,7 +287,7 @@ describe("Orchestrator", () => {
   it("sends progress message on first tool_use and edits on subsequent", async () => {
     let outputCallback: ((sessionId: string, text: string) => void) | undefined;
     let toolUseCallback:
-      | ((sessionId: string, toolName: string) => void)
+      | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
       | undefined;
 
     (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
@@ -288,7 +296,7 @@ describe("Orchestrator", () => {
       },
     );
     (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
-      (handler: (sessionId: string, toolName: string) => void) => {
+      (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
         toolUseCallback = handler;
       },
     );
@@ -297,7 +305,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -316,30 +324,37 @@ describe("Orchestrator", () => {
 
     await new Promise((r) => setTimeout(r, 10));
 
-    // First tool_use: should send a new progress message
-    toolUseCallback!("igor-general", "Bash");
-    await new Promise((r) => setTimeout(r, 10));
-
+    // The "thinking..." indicator was already sent when the message arrived
     expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
       "general",
-      "⚙️ _Running command..._",
+      "⚙️ _thinking..._",
     );
 
-    // Second tool_use: should edit the existing progress message
-    toolUseCallback!("igor-general", "Read");
+    // First tool_use: should edit the existing "thinking..." progress message
+    toolUseCallback!("igor-general", "Bash", { command: "ls" });
     await new Promise((r) => setTimeout(r, 10));
 
     expect(telegramAdapter.editMessage).toHaveBeenCalledWith(
       "general",
       100,
-      "⚙️ _Reading files..._",
+      "⚙️ _Running command..._\n\n`ls`",
+    );
+
+    // Second tool_use: should edit the same progress message
+    toolUseCallback!("igor-general", "Read", { file_path: "/tmp/x" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(telegramAdapter.editMessage).toHaveBeenCalledWith(
+      "general",
+      100,
+      "⚙️ _Reading files..._\n\n/tmp/x",
     );
   });
 
   it("deletes progress message and sends result as new message", async () => {
     let outputCallback: ((sessionId: string, text: string) => void) | undefined;
     let toolUseCallback:
-      | ((sessionId: string, toolName: string) => void)
+      | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
       | undefined;
 
     (sessionManager.onOutput as ReturnType<typeof vi.fn>).mockImplementation(
@@ -348,7 +363,7 @@ describe("Orchestrator", () => {
       },
     );
     (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
-      (handler: (sessionId: string, toolName: string) => void) => {
+      (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
         toolUseCallback = handler;
       },
     );
@@ -357,7 +372,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",
@@ -377,7 +392,7 @@ describe("Orchestrator", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     // Send a tool_use first
-    toolUseCallback!("igor-general", "Bash");
+    toolUseCallback!("igor-general", "Bash", { command: "ls" });
     await new Promise((r) => setTimeout(r, 10));
 
     // Reset mocks to isolate result behavior
@@ -398,7 +413,7 @@ describe("Orchestrator", () => {
     const orchestrator = new Orchestrator({
       adapters: [telegramAdapter, linearAdapter],
       telegram: telegramAdapter as any,
-      stateStore,
+      taskStore,
       sessionManager,
       memoryIngestion,
       worktreeDir: "/tmp/worktrees",

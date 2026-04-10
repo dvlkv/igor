@@ -6,6 +6,32 @@ vi.mock("node:fs");
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 
+function makeConfigJson(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    telegram: { botToken: "$TEST_BOT_TOKEN", ownerChatId: 123 },
+    slack: {
+      botToken: "$TEST_APP_TOKEN",
+      appToken: "literal",
+      channelProjectMap: {},
+    },
+    linear: { webhookSecret: "ws", assigneeId: "a1" },
+    github: { webhookSecret: "gs", assigneeLogin: "user" },
+    general: { claudeArgs: [], systemPrompt: "hello" },
+    memory: { ingestIntervalMs: 1000 },
+    storage: {
+      projectsDir: "/proj",
+      igorDir: "/igor",
+      worktreeDir: "/work",
+      logsDir: "/logs",
+      projectsFile: "/proj.json",
+      tasksFile: "/tasks.json",
+      memoryBufferDir: "/buf",
+    },
+    webhookPort: 3000,
+    ...overrides,
+  });
+}
+
 describe("loadConfig", () => {
   beforeEach(() => {
     process.env.TEST_BOT_TOKEN = "secret-token";
@@ -19,23 +45,7 @@ describe("loadConfig", () => {
   });
 
   it("loads config and resolves env vars", () => {
-    const configJson = JSON.stringify({
-      telegram: { botToken: "$TEST_BOT_TOKEN", ownerChatId: 123 },
-      slack: {
-        botToken: "$TEST_APP_TOKEN",
-        appToken: "literal",
-        channelProjectMap: {},
-      },
-      linear: { webhookSecret: "ws", assigneeId: "a1" },
-      github: { webhookSecret: "gs", assigneeLogin: "user" },
-      general: { claudeArgs: [], projectDir: "/proj" },
-      memory: { ingestIntervalMs: 1000, bufferDir: "/tmp" },
-      webhookPort: 3000,
-      stateFile: "state.json",
-      worktreeDir: "/work",
-    });
-
-    mockedReadFileSync.mockReturnValue(configJson);
+    mockedReadFileSync.mockReturnValue(makeConfigJson());
 
     const config = loadConfig("/fake/config.json");
 
@@ -43,6 +53,23 @@ describe("loadConfig", () => {
     expect(config.slack.botToken).toBe("app-token");
     expect(config.slack.appToken).toBe("literal");
     expect(config.telegram.ownerChatId).toBe(123);
+    expect(config.storage.worktreeDir).toBe("/work");
+    expect(config.storage.memoryBufferDir).toBe("/buf");
+  });
+
+  it("throws if storage block is missing", () => {
+    const configJson = JSON.stringify({
+      telegram: { botToken: "", ownerChatId: 0 },
+      general: { claudeArgs: [] },
+      memory: { ingestIntervalMs: 1000 },
+      webhookPort: 3000,
+    });
+
+    mockedReadFileSync.mockReturnValue(configJson);
+
+    expect(() => loadConfig("/fake/config.json")).toThrow(
+      "Missing required 'storage' block",
+    );
   });
 
   it("throws if config file is missing", () => {
@@ -56,6 +83,15 @@ describe("loadConfig", () => {
   it("returns empty string for unset env var", () => {
     const configJson = JSON.stringify({
       telegram: { botToken: "$MISSING_VAR", ownerChatId: 0 },
+      storage: {
+        projectsDir: "/p",
+        igorDir: "/i",
+        worktreeDir: "/w",
+        logsDir: "/l",
+        projectsFile: "/pf",
+        tasksFile: "/tf",
+        memoryBufferDir: "/mb",
+      },
     });
 
     mockedReadFileSync.mockReturnValue(configJson);

@@ -3,9 +3,9 @@ import type {
   ChannelAdapter,
   IncomingMessage,
   TaskAssignment,
-  TaskSession,
+  Task,
 } from "./types.js";
-import { StateStore } from "./state.js";
+import { TaskStore } from "./task-store.js";
 import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import type { TelegramAdapter } from "./adapters/telegram.js";
@@ -14,7 +14,7 @@ import { toolDisplayName } from "./tool-display.js";
 export interface OrchestratorOptions {
   adapters: ChannelAdapter[];
   telegram?: TelegramAdapter;
-  stateStore: StateStore;
+  taskStore: TaskStore;
   sessionManager: ClaudeSessionManager;
   memoryIngestion: MemoryIngestion;
   worktreeDir: string;
@@ -40,7 +40,7 @@ export class Orchestrator {
 
   private adapters: ChannelAdapter[];
   private telegram?: TelegramAdapter;
-  private stateStore: StateStore;
+  private taskStore: TaskStore;
   private sessionManager: ClaudeSessionManager;
   private memoryIngestion: MemoryIngestion;
   private worktreeDir: string;
@@ -59,7 +59,7 @@ export class Orchestrator {
   constructor(opts: OrchestratorOptions) {
     this.adapters = opts.adapters;
     this.telegram = opts.telegram;
-    this.stateStore = opts.stateStore;
+    this.taskStore = opts.taskStore;
     this.sessionManager = opts.sessionManager;
     this.memoryIngestion = opts.memoryIngestion;
     this.worktreeDir = opts.worktreeDir;
@@ -122,7 +122,7 @@ export class Orchestrator {
 
     if (this.telegram?.sendMessage) {
       const activeAdapters = this.adapters.map((a) => a.name).join(", ");
-      const activeTasks = this.stateStore.getActive().length;
+      const activeTasks = this.taskStore.getActive().length;
       const lines = [
         "⚙️ Harness started",
         `PID: ${process.pid}`,
@@ -167,21 +167,24 @@ export class Orchestrator {
       prompt: task.description,
     });
 
-    const session: TaskSession = {
+    const newTask: Task = {
       taskId: task.taskId,
+      projectName: task.repo ?? "igor",
       source: task.source,
       title: task.title,
-      url: task.url,
+      description: task.description,
       worktreePath,
       branch,
       sessionId,
-      telegramThreadId,
       status: "active",
       createdAt: new Date().toISOString(),
       claudePid: pid,
+      telegramThreadId: telegramThreadId || undefined,
+      githubIssueUrl: task.source === "github" ? task.url : undefined,
+      linearIssueUrl: task.source === "linear" ? task.url : undefined,
     };
 
-    this.stateStore.save(session);
+    this.taskStore.save(newTask);
 
     if (this.telegram?.sendMessage && telegramThreadId) {
       // Set reply context for task sessions
@@ -202,7 +205,7 @@ export class Orchestrator {
     this.memoryIngestion.buffer(project, msg);
 
     if (msg.channelType === "telegram") {
-      const session = this.stateStore.findByTelegramThread(msg.threadId);
+      const session = this.taskStore.findByTelegramThread(msg.threadId);
 
       const targetSession =
         session?.status === "active"
