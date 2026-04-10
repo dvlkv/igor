@@ -1,6 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const client = new Anthropic();
+import { execFile } from "node:child_process";
 
 /**
  * Generate a short thread name (≤50 chars) from a task title/description using Haiku.
@@ -11,19 +9,20 @@ export async function generateThreadName(
   description?: string,
 ): Promise<string> {
   const input = description ? `${title}\n\n${description}` : title;
+  const prompt = `Generate a very short thread name (max 50 characters) for this task. Reply with ONLY the thread name, nothing else.\n\nTask: ${input}`;
+
   try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 60,
-      messages: [
-        {
-          role: "user",
-          content: `Generate a very short thread name (max 50 characters) for this task. Reply with ONLY the thread name, nothing else.\n\nTask: ${input}`,
+    const text = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "claude",
+        ["--model", "haiku", "-p", prompt],
+        { timeout: 15000 },
+        (err, stdout) => {
+          if (err) return reject(err);
+          resolve(stdout.trim());
         },
-      ],
+      );
     });
-    const text =
-      response.content[0].type === "text" ? response.content[0].text.trim() : "";
     if (text && text.length <= 50) return text;
     return text.slice(0, 50) || title.slice(0, 50);
   } catch (err) {
