@@ -1,6 +1,7 @@
 import { exec } from "node:child_process";
 import type {
   ChannelAdapter,
+  HarnessConfig,
   IncomingMessage,
   TaskAssignment,
   Task,
@@ -22,8 +23,7 @@ export interface OrchestratorOptions {
   generalProjectDir: string;
   generalClaudeArgs: string[];
   generalSystemPrompt?: string;
-  taskClaudeArgs: string[];
-  taskSystemPrompt?: string;
+  taskConfig?: HarnessConfig["task"];
 }
 
 function run(cmd: string): Promise<string> {
@@ -50,8 +50,7 @@ export class Orchestrator {
   private generalProjectDir: string;
   private generalClaudeArgs: string[];
   private generalSystemPrompt?: string;
-  private taskClaudeArgs: string[];
-  private taskSystemPrompt?: string;
+  private taskConfig?: HarnessConfig["task"];
   private replyContext = new Map<
     string,
     { adapter: string; threadId: string }
@@ -71,8 +70,7 @@ export class Orchestrator {
     this.generalProjectDir = opts.generalProjectDir;
     this.generalClaudeArgs = opts.generalClaudeArgs;
     this.generalSystemPrompt = opts.generalSystemPrompt;
-    this.taskClaudeArgs = opts.taskClaudeArgs;
-    this.taskSystemPrompt = opts.taskSystemPrompt;
+    this.taskConfig = opts.taskConfig;
 
     for (const adapter of this.adapters) {
       adapter.onMessage((msg) => this.handleMessage(msg));
@@ -171,8 +169,8 @@ export class Orchestrator {
       name: sessionId,
       worktreePath,
       prompt: task.description,
-      systemPrompt: this.taskSystemPrompt,
-      claudeArgs: this.taskClaudeArgs,
+      systemPrompt: this.taskConfig?.systemPrompt,
+      claudeArgs: this.taskConfig?.claudeArgs,
     });
 
     const newTask: Task = {

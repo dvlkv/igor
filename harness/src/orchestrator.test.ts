@@ -149,7 +149,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     linearAdapter.fireTask({
@@ -204,7 +203,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     telegramAdapter.fireMessage({
@@ -235,7 +233,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     telegramAdapter.fireMessage({
@@ -273,7 +270,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     // Send a message to set the reply context
@@ -321,7 +317,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     // Set reply context
@@ -389,7 +384,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     // Set reply context
@@ -431,7 +425,6 @@ describe("Orchestrator", () => {
       worktreeDir: "/tmp/worktrees",
       generalProjectDir: "/tmp/project",
       generalClaudeArgs: [],
-      taskClaudeArgs: [],
     });
 
     telegramAdapter.fireMessage({
