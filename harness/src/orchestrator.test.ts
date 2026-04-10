@@ -56,6 +56,12 @@ vi.mock("./memory-ingestion.js", () => {
   };
 });
 
+vi.mock("./thread-name.js", () => {
+  return {
+    generateThreadName: vi.fn(async (title: string) => title),
+  };
+});
+
 vi.mock("node:child_process", () => {
   return {
     exec: vi.fn((_cmd: string, cb: Function) => {
@@ -157,7 +163,7 @@ describe("Orchestrator", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(telegramAdapter.createThread).toHaveBeenCalledWith(
-      "Task: Fix the bug",
+      "Fix the bug",
     );
     expect(sessionManager.createSession).toHaveBeenCalled();
     expect(taskStore.save).toHaveBeenCalled();

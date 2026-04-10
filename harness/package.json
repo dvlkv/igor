@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.87.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@slack/bolt": "^4.3.0",
     "express": "^5.1.0",
