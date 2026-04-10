@@ -23,39 +23,11 @@ const PROJECTS_FILE =
 const PROJECTS_DIR = process.env.IGOR_PROJECTS_DIR || join(homedir(), "projects");
 const IGOR_DIR = process.env.IGOR_DIR || join(homedir(), "igor");
 
-// --- Types (mirrors harness/src/types.ts) ---
-
-interface Task {
-  taskId: string;
-  projectName: string;
-  source: string;
-  title: string;
-  description?: string;
-  worktreePath: string;
-  branch: string;
-  sessionId: string;
-  status: "active" | "completed" | "abandoned";
-  createdAt: string;
-  completedAt?: string;
-  claudePid?: number;
-  telegramThreadId?: string;
-  slackThreadTs?: string;
-  slackChannelId?: string;
-  linearIssueId?: string;
-  linearIssueUrl?: string;
-  githubIssueNumber?: number;
-  githubIssueUrl?: string;
-}
+// Types imported from harness
+import type { Task, Project } from "../../harness/src/types.js";
 
 interface TaskData {
   tasks: Task[];
-}
-
-interface Project {
-  name: string;
-  path: string;
-  remoteUrl?: string;
-  createdAt: string;
 }
 
 interface ProjectData {
