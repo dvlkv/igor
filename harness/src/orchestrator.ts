@@ -21,6 +21,8 @@ export interface OrchestratorOptions {
   generalProjectDir: string;
   generalClaudeArgs: string[];
   generalSystemPrompt?: string;
+  taskClaudeArgs: string[];
+  taskSystemPrompt?: string;
 }
 
 function run(cmd: string): Promise<string> {
@@ -47,6 +49,8 @@ export class Orchestrator {
   private generalProjectDir: string;
   private generalClaudeArgs: string[];
   private generalSystemPrompt?: string;
+  private taskClaudeArgs: string[];
+  private taskSystemPrompt?: string;
   private replyContext = new Map<
     string,
     { adapter: string; threadId: string }
@@ -66,6 +70,8 @@ export class Orchestrator {
     this.generalProjectDir = opts.generalProjectDir;
     this.generalClaudeArgs = opts.generalClaudeArgs;
     this.generalSystemPrompt = opts.generalSystemPrompt;
+    this.taskClaudeArgs = opts.taskClaudeArgs;
+    this.taskSystemPrompt = opts.taskSystemPrompt;
 
     for (const adapter of this.adapters) {
       adapter.onMessage((msg) => this.handleMessage(msg));
@@ -165,6 +171,8 @@ export class Orchestrator {
       name: sessionId,
       worktreePath,
       prompt: task.description,
+      systemPrompt: this.taskSystemPrompt,
+      claudeArgs: this.taskClaudeArgs,
     });
 
     const newTask: Task = {

@@ -131,9 +131,16 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
+## After Plan: Draft PR
+
+After saving the plan, **do NOT start implementation yet**. Instead:
+
+1. **REQUIRED SUB-SKILL:** Invoke `/draft-pr-planning` to create a Draft PR with the plan as the PR body.
+2. Only after the Draft PR is created, choose the execution mode and proceed.
+
 ## Execution: Automatic Mode Selection
 
-After saving the plan, choose the execution mode yourself based on scope. Do NOT ask the user — decide and proceed.
+After the Draft PR exists, choose the execution mode yourself based on scope. Do NOT ask the user — decide and proceed.
 
 **Decision criteria:**
 
@@ -156,3 +163,5 @@ After saving the plan, choose the execution mode yourself based on scope. Do NOT
 - Fresh subagent per task + two-stage review
 
 Proceed to execution immediately after announcing the choice.
+
+When implementation is complete, mark the PR as ready: `gh pr ready`.
