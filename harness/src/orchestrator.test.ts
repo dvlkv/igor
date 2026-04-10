@@ -20,6 +20,7 @@ vi.mock("./task-store.js", () => {
         findBySlackThread: vi.fn(),
         findByLinearIssue: vi.fn(),
         findByGithubIssue: vi.fn(),
+        findByBranch: vi.fn(),
       };
     }),
   };
@@ -97,6 +98,7 @@ function createMockAdapter(name: string) {
     }),
     sendMessage: vi.fn().mockResolvedValue(100),
     createThread: vi.fn().mockResolvedValue("thread-123"),
+    onTaskCompleted: vi.fn(),
     fireMessage(msg: IncomingMessage) {
       messageHandler?.(msg);
     },
@@ -114,6 +116,7 @@ function createMockTelegramAdapter() {
     ...base,
     onClear: vi.fn(),
     onPermissionResponse: vi.fn(),
+    onTaskCompleted: vi.fn(),
     sendPermissionPrompt: vi.fn().mockResolvedValue(undefined),
     editMessage: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
@@ -438,6 +441,318 @@ describe("Orchestrator", () => {
     expect(memoryIngestion.buffer).toHaveBeenCalledWith(
       "my-project",
       expect.objectContaining({ text: "Hello world" }),
+    );
+  });
+
+  describe("completeTask", () => {
+    it("kills session, updates task, cleans up maps", async () => {
+      const mockTask: Task = {
+        taskId: "LIN-123",
+        projectName: "igor",
+        source: "linear",
+        title: "Fix the bug",
+        worktreePath: "/tmp/worktrees/LIN-123",
+        branch: "igor/LIN-123",
+        sessionId: "LIN-123",
+        telegramThreadId: "thread-456",
+        status: "active",
+        createdAt: new Date().toISOString(),
+        claudePid: 12345,
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(
+        true,
+      );
+
+      // Mock exec to report branch as merged
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (cmd: string, cb: Function) => {
+          if (cmd.includes("branch --merged")) {
+            cb(null, "  main\n  igor/LIN-123\n", "");
+          } else {
+            cb(null, "", "");
+          }
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("LIN-123");
+
+      expect(sessionManager.killSession).toHaveBeenCalledWith("LIN-123");
+      expect(taskStore.update).toHaveBeenCalledWith(
+        "LIN-123",
+        expect.objectContaining({
+          status: "completed",
+          claudePid: undefined,
+        }),
+      );
+      expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
+        "thread-456",
+        expect.stringContaining("completed"),
+      );
+    });
+
+    it("skips if task not found", async () => {
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("NONEXISTENT");
+
+      expect(sessionManager.killSession).not.toHaveBeenCalled();
+      expect(taskStore.update).not.toHaveBeenCalled();
+    });
+
+    it("skips if task already completed", async () => {
+      const mockTask: Task = {
+        taskId: "LIN-123",
+        projectName: "igor",
+        source: "linear",
+        title: "Fix the bug",
+        worktreePath: "/tmp/worktrees/LIN-123",
+        branch: "igor/LIN-123",
+        sessionId: "LIN-123",
+        status: "completed",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("LIN-123");
+
+      expect(sessionManager.killSession).not.toHaveBeenCalled();
+      expect(taskStore.update).not.toHaveBeenCalled();
+    });
+
+    it("keeps unmerged branch and mentions it in summary", async () => {
+      const mockTask: Task = {
+        taskId: "LIN-456",
+        projectName: "igor",
+        source: "linear",
+        title: "Add feature",
+        worktreePath: "/tmp/worktrees/LIN-456",
+        branch: "igor/LIN-456",
+        sessionId: "LIN-456",
+        telegramThreadId: "thread-789",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+
+      // Branch NOT in merged list
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (cmd: string, cb: Function) => {
+          if (cmd.includes("branch --merged")) {
+            cb(null, "  main\n", "");
+          } else {
+            cb(null, "", "");
+          }
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("LIN-456");
+
+      expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
+        "thread-789",
+        expect.stringContaining("kept"),
+      );
+    });
+  });
+
+  it("wires telegram onTaskCompleted to completeTask", async () => {
+    const mockTask: Task = {
+      taskId: "LIN-123",
+      projectName: "igor",
+      source: "linear",
+      title: "Fix the bug",
+      worktreePath: "/tmp/worktrees/LIN-123",
+      branch: "igor/LIN-123",
+      sessionId: "LIN-123",
+      telegramThreadId: "thread-456",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+    (
+      taskStore.findByTelegramThread as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
+
+    const { exec } = await import("node:child_process");
+    (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string, cb: Function) => {
+        cb(null, "  main\n", "");
+      },
+    );
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Simulate: /done called with explicit taskId
+    const handler = (
+      telegramAdapter.onTaskCompleted as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    await handler("LIN-123", undefined);
+
+    expect(taskStore.update).toHaveBeenCalledWith(
+      "LIN-123",
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("completes task when GitHub adapter reports PR merged", async () => {
+    const mockTask: Task = {
+      taskId: "dvlkv/igor#50",
+      projectName: "igor",
+      source: "github",
+      title: "Add feature",
+      worktreePath: "/tmp/worktrees/dvlkv-igor-50",
+      branch: "igor/dvlkv-igor-50",
+      sessionId: "dvlkv-igor-50",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+    (
+      taskStore.findByBranch as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
+
+    const { exec } = await import("node:child_process");
+    (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string, cb: Function) => {
+        cb(null, "  main\n  igor/dvlkv-igor-50\n", "");
+      },
+    );
+
+    const githubAdapter = createMockAdapter("github");
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, githubAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Simulate GitHub PR merged callback
+    const handler = (
+      githubAdapter.onTaskCompleted as ReturnType<typeof vi.fn>
+    ).mock.calls[0]?.[0];
+
+    // GitHub emits branch name — orchestrator resolves to task
+    if (handler) {
+      await handler("igor/dvlkv-igor-50");
+    }
+
+    expect(taskStore.update).toHaveBeenCalledWith(
+      "dvlkv/igor#50",
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("resolves task from thread when /done has no argument", async () => {
+    const mockTask: Task = {
+      taskId: "LIN-789",
+      projectName: "igor",
+      source: "linear",
+      title: "Another bug",
+      worktreePath: "/tmp/worktrees/LIN-789",
+      branch: "igor/LIN-789",
+      sessionId: "LIN-789",
+      telegramThreadId: "thread-101",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+    (
+      taskStore.findByTelegramThread as ReturnType<typeof vi.fn>
+    ).mockReturnValue(mockTask);
+
+    const { exec } = await import("node:child_process");
+    (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (cmd: string, cb: Function) => {
+        cb(null, "  main\n", "");
+      },
+    );
+
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    // Simulate: /done called inside task thread (no explicit ID)
+    const handler = (
+      telegramAdapter.onTaskCompleted as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    await handler(undefined, "thread-101");
+
+    expect(taskStore.update).toHaveBeenCalledWith(
+      "LIN-789",
+      expect.objectContaining({ status: "completed" }),
     );
   });
 });

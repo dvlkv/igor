@@ -481,6 +481,52 @@ server.tool(
   },
 );
 
+server.tool(
+  "complete_task",
+  "Complete a task — kills Claude session, removes worktree, handles branch cleanup, notifies Telegram",
+  {
+    task_id: z.string().describe("Task ID to complete"),
+  },
+  async ({ task_id }) => {
+    const port = process.env.IGOR_HARNESS_PORT || "3847";
+    const url = `http://localhost:${port}/tasks/${encodeURIComponent(task_id)}/complete`;
+
+    try {
+      const res = await fetch(url, { method: "POST" });
+      const body = await res.json();
+
+      if (!res.ok) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to complete task "${task_id}": ${body.message ?? res.statusText}`,
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Task "${task_id}" completed successfully.`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to reach harness at ${url}: ${err}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
 // --- Start ---
 
 async function main() {

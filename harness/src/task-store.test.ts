@@ -122,4 +122,24 @@ describe("TaskStore", () => {
     expect(store.getActive()).toHaveLength(1);
     expect(store.getActive()[0].taskId).toBe("a");
   });
+
+  it("finds task by branch name", () => {
+    mExistsSync.mockReturnValue(false);
+    const store = new TaskStore("/tmp/tasks.json");
+    store.save({
+      taskId: "TASK-1",
+      projectName: "igor",
+      source: "github",
+      title: "Fix bug",
+      worktreePath: "/tmp/worktrees/TASK-1",
+      branch: "igor/TASK-1",
+      sessionId: "TASK-1",
+      status: "active",
+      createdAt: "2026-04-10T00:00:00Z",
+    });
+    expect(store.findByBranch("igor/TASK-1")).toEqual(
+      expect.objectContaining({ taskId: "TASK-1" }),
+    );
+    expect(store.findByBranch("nonexistent")).toBeUndefined();
+  });
 });

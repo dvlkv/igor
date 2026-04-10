@@ -25,6 +25,9 @@ export class TelegramAdapter implements ChannelAdapter {
   private messageHandlers: Array<(msg: IncomingMessage) => void> = [];
   private taskHandlers: Array<(task: TaskAssignment) => void> = [];
   private clearHandlers: Array<() => void> = [];
+  private taskCompletedHandlers: Array<
+    (taskId: string | undefined, threadId: string | undefined) => void
+  > = [];
   private permissionResponseHandler?: (
     sessionId: string,
     requestId: string,
@@ -40,6 +43,18 @@ export class TelegramAdapter implements ChannelAdapter {
         handler();
       }
       ctx.reply("General session cleared.");
+    });
+
+    this.bot.command("done", (ctx) => {
+      const text = ctx.message?.text ?? "";
+      const arg = text.replace(/^\/done\s*/, "").trim();
+      const threadId = ctx.message?.message_thread_id?.toString();
+
+      const taskId = arg || undefined;
+
+      for (const handler of this.taskCompletedHandlers) {
+        handler(taskId, threadId);
+      }
     });
 
     this.bot.command("task", (ctx) => {
@@ -114,6 +129,12 @@ export class TelegramAdapter implements ChannelAdapter {
 
   onClear(handler: () => void): void {
     this.clearHandlers.push(handler);
+  }
+
+  onTaskCompleted(
+    handler: (taskId: string | undefined, threadId: string | undefined) => void,
+  ): void {
+    this.taskCompletedHandlers.push(handler);
   }
 
   onPermissionResponse(
@@ -203,6 +224,10 @@ export class TelegramAdapter implements ChannelAdapter {
       {
         command: "task",
         description: "Create a new task — /task Title\\nDescription",
+      },
+      {
+        command: "done",
+        description: "Complete a task — /done [taskId] or use in task thread",
       },
       {
         command: "clear",

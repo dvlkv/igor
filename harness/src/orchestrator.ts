@@ -71,6 +71,25 @@ export class Orchestrator {
     for (const adapter of this.adapters) {
       adapter.onMessage((msg) => this.handleMessage(msg));
       adapter.onTaskAssigned((task) => this.handleTaskAssignment(task));
+      if ("onTaskCompleted" in adapter && typeof (adapter as any).onTaskCompleted === "function") {
+        (adapter as any).onTaskCompleted(async (idOrBranch: string) => {
+          // Try as taskId first, then as branch, then as linearIssueId
+          let task = this.taskStore.get(idOrBranch);
+          if (!task) {
+            task = this.taskStore.findByBranch(idOrBranch);
+          }
+          if (!task) {
+            task = this.taskStore.findByLinearIssue(idOrBranch);
+          }
+          if (task) {
+            await this.completeTask(task.taskId);
+          } else {
+            console.log(
+              `[cleanup] could not resolve task for "${idOrBranch}"`,
+            );
+          }
+        });
+      }
     }
 
     // Route tool_use events as progress messages
@@ -82,6 +101,25 @@ export class Orchestrator {
     this.sessionManager.onAssistantText((sessionId, text) => {
       void this.handleAssistantText(sessionId, text);
     });
+
+    if (this.telegram) {
+      this.telegram.onTaskCompleted(
+        async (taskId: string | undefined, threadId: string | undefined) => {
+          let resolvedTaskId = taskId;
+          if (!resolvedTaskId && threadId) {
+            const task = this.taskStore.findByTelegramThread(threadId);
+            resolvedTaskId = task?.taskId;
+          }
+          if (resolvedTaskId) {
+            await this.completeTask(resolvedTaskId);
+          } else {
+            console.log(
+              `[done] could not resolve task — taskId=${taskId} threadId=${threadId}`,
+            );
+          }
+        },
+      );
+    }
 
     // Route Claude JSON output back to adapters
     this.sessionManager.onOutput((sessionId, text) => {
@@ -197,6 +235,92 @@ export class Orchestrator {
         `Started working on: ${task.title}`,
       );
     }
+  }
+
+  async completeTask(taskId: string): Promise<void> {
+    const task = this.taskStore.get(taskId);
+    if (!task || task.status === "completed" || task.status === "abandoned") {
+      console.log(`[cleanup] task "${taskId}" not found or already done`);
+      return;
+    }
+
+    console.log(`[cleanup] completing task "${taskId}"`);
+
+    // 1. Kill Claude session
+    try {
+      if (this.sessionManager.isAlive(task.sessionId)) {
+        await this.sessionManager.killSession(task.sessionId);
+        console.log(`[cleanup] killed session "${task.sessionId}"`);
+      }
+    } catch (err: any) {
+      console.log(`[cleanup] session kill failed: ${err.message}`);
+    }
+
+    // 2. Check if branch is merged and handle worktree + branch
+    let branchMerged = false;
+    let branchMessage = "";
+    try {
+      const mergedOutput = await run(
+        `git branch --merged main`,
+      );
+      branchMerged = mergedOutput
+        .split("\n")
+        .map((b) => b.trim())
+        .includes(task.branch);
+    } catch (err: any) {
+      console.log(`[cleanup] merge check failed: ${err.message}`);
+    }
+
+    // 3. Remove worktree
+    try {
+      if (branchMerged) {
+        await run(`git worktree remove ${task.worktreePath}`);
+      } else {
+        await run(`git worktree remove --force ${task.worktreePath}`);
+      }
+      console.log(`[cleanup] removed worktree "${task.worktreePath}"`);
+    } catch (err: any) {
+      console.log(`[cleanup] worktree remove failed: ${err.message}`);
+    }
+
+    // 4. Delete branch if merged, keep if not
+    if (branchMerged) {
+      try {
+        await run(`git branch -d ${task.branch}`);
+        branchMessage = `Branch \`${task.branch}\` deleted.`;
+        console.log(`[cleanup] deleted branch "${task.branch}"`);
+      } catch (err: any) {
+        branchMessage = `Branch \`${task.branch}\` kept (delete failed).`;
+        console.log(`[cleanup] branch delete failed: ${err.message}`);
+      }
+    } else {
+      branchMessage = `Branch \`${task.branch}\` kept (not merged).`;
+    }
+
+    // 5. Update task status
+    this.taskStore.update(taskId, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      claudePid: undefined,
+    });
+
+    // 6. Notify Telegram
+    if (this.telegram?.sendMessage && task.telegramThreadId) {
+      try {
+        await this.telegram.sendMessage(
+          task.telegramThreadId,
+          `Task completed. ${branchMessage}`,
+        );
+      } catch (err: any) {
+        console.log(`[cleanup] telegram notify failed: ${err.message}`);
+      }
+    }
+
+    // 7. Clean up internal maps
+    this.replyContext.delete(task.sessionId);
+    this.progressMessages.delete(task.sessionId);
+
+    console.log(`[cleanup] task "${taskId}" completed`);
   }
 
   handleMessage(msg: IncomingMessage): void {
