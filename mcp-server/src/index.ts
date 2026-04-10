@@ -23,10 +23,6 @@ const PROJECTS_FILE =
 const PROJECTS_DIR = process.env.IGOR_PROJECTS_DIR || join(homedir(), "projects");
 const IGOR_DIR = process.env.IGOR_DIR || join(homedir(), "igor");
 
-// Also read legacy state.json for backward compat
-const LEGACY_STATE_FILE =
-  process.env.IGOR_STATE_FILE || join(IGOR_DIR, "harness", "state.json");
-
 // --- Types (mirrors harness/src/types.ts) ---
 
 interface Task {
@@ -66,29 +62,9 @@ interface ProjectData {
   projects: Project[];
 }
 
-// Legacy format from state.json
-interface LegacyTaskSession {
-  taskId: string;
-  source: string;
-  title: string;
-  url?: string;
-  worktreePath: string;
-  branch: string;
-  sessionId: string;
-  telegramThreadId: string;
-  status: "active" | "completed";
-  createdAt: string;
-  claudePid?: number;
-}
-
-interface LegacyStateData {
-  sessions: LegacyTaskSession[];
-}
-
 // --- Helpers ---
 
 function readTasks(): Task[] {
-  // Read new-format tasks
   if (existsSync(TASKS_FILE)) {
     try {
       const data: TaskData = JSON.parse(readFileSync(TASKS_FILE, "utf-8"));
@@ -97,32 +73,6 @@ function readTasks(): Task[] {
       // fall through
     }
   }
-
-  // Fall back to legacy state.json, converting to Task shape
-  if (existsSync(LEGACY_STATE_FILE)) {
-    try {
-      const data: LegacyStateData = JSON.parse(
-        readFileSync(LEGACY_STATE_FILE, "utf-8"),
-      );
-      return data.sessions.map((s) => ({
-        taskId: s.taskId,
-        projectName: "igor",
-        source: s.source,
-        title: s.title,
-        description: undefined,
-        worktreePath: s.worktreePath,
-        branch: s.branch,
-        sessionId: s.sessionId,
-        status: s.status,
-        createdAt: s.createdAt,
-        claudePid: s.claudePid,
-        telegramThreadId: s.telegramThreadId,
-      }));
-    } catch {
-      // fall through
-    }
-  }
-
   return [];
 }
 
