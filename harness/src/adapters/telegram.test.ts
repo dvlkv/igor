@@ -111,4 +111,65 @@ describe("TelegramAdapter", () => {
       .value;
     expect(bot.api.deleteMessage).toHaveBeenCalledWith(123, 42);
   });
+
+  it("registers /done command handler", () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    expect(bot.command).toHaveBeenCalledWith("done", expect.any(Function));
+  });
+
+  it("fires onTaskCompleted with taskId from argument", () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const completedTasks: string[] = [];
+    adapter.onTaskCompleted((taskId) => completedTasks.push(taskId));
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    const lastDoneCall = bot.command.mock.calls
+      .reverse()
+      .find((c: any[]) => c[0] === "done");
+    const doneHandler = lastDoneCall?.[1];
+
+    doneHandler({
+      message: { text: "/done LIN-123", message_thread_id: undefined },
+      reply: vi.fn(),
+    });
+
+    expect(completedTasks).toEqual(["LIN-123"]);
+  });
+
+  it("fires onTaskCompleted with threadId when no argument given", () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const completedThreads: string[] = [];
+    adapter.onTaskCompleted((_taskId, threadId) =>
+      completedThreads.push(threadId ?? ""),
+    );
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    const lastDoneCall = bot.command.mock.calls
+      .reverse()
+      .find((c: any[]) => c[0] === "done");
+    const doneHandler = lastDoneCall?.[1];
+
+    doneHandler({
+      message: { text: "/done", message_thread_id: 456 },
+      reply: vi.fn(),
+    });
+
+    expect(completedThreads).toEqual(["456"]);
+  });
 });
