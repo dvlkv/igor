@@ -154,10 +154,10 @@ export class TelegramAdapter implements ChannelAdapter {
     console.log(
       `[telegram:send] threadId="${threadId}" ownerChatId=${this.config.ownerChatId} text="${text.slice(0, 100)}"`,
     );
-    const opts =
+    const opts: Record<string, unknown> =
       threadId !== "general"
-        ? { message_thread_id: Number(threadId) }
-        : {};
+        ? { message_thread_id: Number(threadId), parse_mode: "Markdown" }
+        : { parse_mode: "Markdown" };
     try {
       const result = await this.bot.api.sendMessage(
         this.config.ownerChatId,

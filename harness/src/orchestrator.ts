@@ -202,7 +202,7 @@ export class Orchestrator {
     const pid = await this.sessionManager.createSession({
       name: sessionId,
       worktreePath,
-      prompt: task.description,
+      prompt: `/human-coder\n\n${task.description}`,
     });
 
     const newTask: Task = {

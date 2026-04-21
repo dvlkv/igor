@@ -131,8 +131,31 @@ export class ClaudeSessionManager {
       `Session "${sessionName}" started (pid=${child.pid}, cwd=${opts.worktreePath})`,
     );
 
-    // Send the initial prompt via stdin in stream-json format
+    // Wait for Claude to signal readiness before sending the initial prompt.
+    // Claude emits JSON on stdout once it's ready to accept input.
     if (opts.prompt) {
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          child.stdout?.off("data", onReady);
+          console.log(
+            `[session] "${sessionName}" readiness timeout — sending prompt anyway`,
+          );
+          resolve();
+        }, 30_000);
+        const onReady = (data: Buffer) => {
+          const text = data.toString();
+          if (text.includes("{")) {
+            child.stdout?.off("data", onReady);
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+        child.stdout?.on("data", onReady);
+        child.on("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
       this.writeToStdin(sessionName, opts.prompt);
     }
 
