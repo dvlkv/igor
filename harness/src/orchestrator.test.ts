@@ -57,9 +57,12 @@ vi.mock("./memory-ingestion.js", () => {
   };
 });
 
-vi.mock("./thread-name.js", () => {
+vi.mock("./task-name.js", () => {
   return {
-    generateThreadName: vi.fn(async (title: string) => title),
+    generateTaskName: vi.fn(async (title: string) => title),
+    slugify: vi.fn((name: string) =>
+      name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "task",
+    ),
   };
 });
 
@@ -173,10 +176,92 @@ describe("Orchestrator", () => {
 
     const savedTask = (taskStore.save as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as Task;
-    expect(savedTask.sessionId).toBe("LIN-123");
+    expect(savedTask.sessionId).toBe("LIN-123-fix-the-bug");
+    expect(savedTask.branch).toBe("igor/LIN-123-fix-the-bug");
     expect(savedTask.claudePid).toBe(12345);
     expect(savedTask.projectName).toBe("igor");
     expect(savedTask.linearIssueUrl).toBe("https://linear.app/issue/LIN-123");
+  });
+
+  it("sends instant progress message to general thread", async () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, linearAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    linearAdapter.fireTask({
+      source: "linear",
+      taskId: "LIN-400",
+      title: "Add search feature",
+      description: "",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // First call should be the instant feedback to general
+    const sendCalls = (telegramAdapter.sendMessage as ReturnType<typeof vi.fn>).mock.calls;
+    expect(sendCalls[0]).toEqual(["general", "Starting task: Add search feature..."]);
+  });
+
+  it("updates progress message during setup", async () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, linearAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    linearAdapter.fireTask({
+      source: "linear",
+      taskId: "LIN-401",
+      title: "Fix auth",
+      description: "",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const editCalls = (telegramAdapter.editMessage as ReturnType<typeof vi.fn>).mock.calls;
+    expect(editCalls.length).toBeGreaterThanOrEqual(3);
+    expect(editCalls[0]).toEqual(["general", 100, "Creating worktree..."]);
+    expect(editCalls[1]).toEqual(["general", 100, "Creating thread..."]);
+    expect(editCalls[2]).toEqual(["general", 100, "Starting Claude session..."]);
+  });
+
+  it("uses human-readable branch with task ID and slug", async () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, linearAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    linearAdapter.fireTask({
+      source: "linear",
+      taskId: "LIN-500",
+      title: "Add dark mode",
+      description: "",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const savedTask = (taskStore.save as ReturnType<typeof vi.fn>).mock.calls[0][0] as Task;
+    expect(savedTask.branch).toBe("igor/LIN-500-add-dark-mode");
+    expect(savedTask.worktreePath).toBe("/tmp/worktrees/LIN-500-add-dark-mode");
+    expect(savedTask.sessionId).toBe("LIN-500-add-dark-mode");
   });
 
   it("includes title in session prompt", async () => {
@@ -236,9 +321,9 @@ describe("Orchestrator", () => {
       projectName: "igor",
       source: "linear",
       title: "Fix the bug",
-      worktreePath: "/tmp/worktrees/LIN-123",
-      branch: "igor/LIN-123",
-      sessionId: "LIN-123",
+      worktreePath: "/tmp/worktrees/LIN-123-fix-the-bug",
+      branch: "igor/LIN-123-fix-the-bug",
+      sessionId: "LIN-123-fix-the-bug",
       telegramThreadId: "thread-456",
       status: "active",
       createdAt: new Date().toISOString(),
@@ -271,7 +356,7 @@ describe("Orchestrator", () => {
     await new Promise((r) => setTimeout(r, 10));
 
     expect(sessionManager.sendMessage).toHaveBeenCalledWith(
-      "LIN-123",
+      "LIN-123-fix-the-bug",
       "Please also fix the typo",
     );
   });
