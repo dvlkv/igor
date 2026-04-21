@@ -10,7 +10,7 @@ import { ClaudeSessionManager } from "./session-manager.js";
 import { MemoryIngestion } from "./memory-ingestion.js";
 import type { TelegramAdapter } from "./adapters/telegram.js";
 import { toolDisplayName } from "./tool-display.js";
-import { generateThreadName } from "./thread-name.js";
+import { generateTaskName, slugify } from "./task-name.js";
 
 export interface OrchestratorOptions {
   adapters: ChannelAdapter[];
@@ -186,19 +186,40 @@ export class Orchestrator {
 
   async handleTaskAssignment(task: TaskAssignment): Promise<void> {
     console.log(`[task:${task.source}] ${task.title}`);
-    const sanitizedId = task.taskId.replace(/[^a-zA-Z0-9-]/g, "-");
-    const branch = `igor/${sanitizedId}`;
-    const worktreePath = `${this.worktreeDir}/${sanitizedId}`;
 
+    // Instant feedback
+    let progressMsgId: number | undefined;
+    if (this.telegram?.sendMessage) {
+      progressMsgId = await this.telegram.sendMessage(
+        "general",
+        `Starting task: ${task.title}...`,
+      );
+    }
+
+    const updateProgress = async (text: string) => {
+      if (this.telegram?.editMessage && progressMsgId) {
+        await this.telegram.editMessage("general", progressMsgId, text);
+      }
+    };
+
+    const taskName = await generateTaskName(task.title, task.description);
+    const sanitizedId = task.taskId.replace(/[^a-zA-Z0-9-]/g, "-");
+    const slug = slugify(taskName);
+    const qualifiedName = `${sanitizedId}-${slug}`;
+    const branch = `igor/${qualifiedName}`;
+    const worktreePath = `${this.worktreeDir}/${qualifiedName}`;
+
+    await updateProgress("Creating worktree...");
     await run(`git worktree add ${worktreePath} -b ${branch}`);
 
     let telegramThreadId = "";
     if (this.telegram?.createThread) {
-      const threadName = await generateThreadName(task.title, task.description);
-      telegramThreadId = await this.telegram.createThread(threadName);
+      await updateProgress("Creating thread...");
+      telegramThreadId = await this.telegram.createThread(taskName);
     }
 
-    const sessionId = sanitizedId;
+    await updateProgress("Starting Claude session...");
+    const sessionId = qualifiedName;
     const pid = await this.sessionManager.createSession({
       name: sessionId,
       worktreePath,
@@ -225,7 +246,6 @@ export class Orchestrator {
     this.taskStore.save(newTask);
 
     if (this.telegram?.sendMessage && telegramThreadId) {
-      // Set reply context for task sessions
       this.replyContext.set(sessionId, {
         adapter: "telegram",
         threadId: telegramThreadId,

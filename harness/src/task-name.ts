@@ -1,10 +1,17 @@
 import { execFile } from "node:child_process";
 
-/**
- * Generate a short thread name (≤50 chars) from a task title/description using Haiku.
- * Falls back to truncated title on failure.
- */
-export async function generateThreadName(
+export function slugify(name: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!slug) return "task";
+  if (slug.length <= 50) return slug;
+  const truncated = slug.slice(0, 50).replace(/-+$/, "");
+  return truncated || "task";
+}
+
+export async function generateTaskName(
   title: string,
   description?: string,
 ): Promise<string> {
@@ -26,7 +33,7 @@ export async function generateThreadName(
     if (text && text.length <= 50) return text;
     return text.slice(0, 50) || title.slice(0, 50);
   } catch (err) {
-    console.log(`[thread-name] Haiku call failed: ${err}`);
+    console.log(`[task-name] Haiku call failed: ${err}`);
     return title.slice(0, 50);
   }
 }
