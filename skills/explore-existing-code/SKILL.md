@@ -1,10 +1,10 @@
 ---
 name: explore-existing-code
 description: >-
-  ALWAYS run at the start of every coding session, unconditionally. Generates a
-  compressed repository map using repomix and stores it in .claude/repomap.xml
-  so you know everything already implemented before writing any code. If there
-  is even a 1% chance this skill applies, invoke it.
+  ALWAYS run at the start of every coding session, unconditionally. Uses LSP
+  tools and targeted exploration to understand the codebase structure, symbols,
+  and patterns before writing any code. If there is even a 1% chance this skill
+  applies, invoke it.
 ---
 
 # Explore Existing Code
@@ -19,26 +19,38 @@ This skill must be invoked at the very beginning of every coding conversation �
 
 ## Workflow
 
-1. **Run repomix** to generate a compressed repository map:
+Use LSP tools and targeted file exploration to understand the codebase. This is faster, more accurate, and doesn't require external dependencies.
 
-   ```bash
-   npx repomix --compress --output .claude/repomap.xml \
-     --ignore "node_modules,dist,build,.next,out,coverage,.git,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml,*.min.js,*.min.css,*.map,*.bundle.js,*.chunk.js,.env*,*.log,tmp,temp,.cache,.turbo,.parcel-cache,__pycache__,.pytest_cache,.mypy_cache,.venv,venv,env,.tox,.eggs,*.egg-info,.gradle,target,bin/Debug,bin/Release,obj,*.o,*.a,*.so,*.dylib,*.dll,*.class,*.pyc,*.pyo,.DS_Store,Thumbs.db,*.sqlite,*.db"
+1. **Survey the project structure** using Glob to understand file organization:
+
+   ```
+   Glob: **/*.ts, **/*.tsx, **/*.js, **/*.py, **/*.go (adapt to project languages)
    ```
 
-2. **Log the token count** of the generated map so you know the context cost:
+   Get the lay of the land: directories, modules, entry points.
 
-   ```bash
-   wc -c .claude/repomap.xml | awk '{printf "Repo map size: %d bytes (~%d tokens)\n", $1, $1/4}'
-   ```
+2. **Use LSP tools** to understand code semantics:
 
-3. **Read the generated map** from `.claude/repomap.xml` to understand:
-   - Project structure and file organization
-   - Existing modules, classes, functions, and their signatures
-   - Dependencies and how components connect
-   - What is already implemented vs what is missing
+   - **Document symbols** — get the symbols (functions, classes, interfaces, types) defined in key files to understand their API surface
+   - **Workspace symbols** — search for specific symbols across the entire project when you need to find where something is defined
+   - **Go to definition** — trace how components connect to each other
+   - **Find references** — understand how symbols are used across the codebase
+   - **Diagnostics** — check for existing type errors or warnings
 
-4. **Use this knowledge** throughout the session to:
+3. **Read key files** to understand patterns and conventions:
+
+   - Entry points (index.ts, main.ts, app.ts, etc.)
+   - Package.json / pyproject.toml / go.mod for dependencies
+   - Config files (tsconfig.json, etc.)
+   - README and docs if present
+
+4. **Use Grep** for pattern-based exploration:
+
+   - Find imports/exports to understand module boundaries
+   - Search for patterns like `export function`, `export class`, `interface` to catalog the public API
+   - Find TODOs, FIXMEs, or other markers
+
+5. **Use this knowledge** throughout the session to:
    - Avoid reimplementing existing functionality
    - Follow established patterns and conventions
    - Place new code in the right location
@@ -46,15 +58,15 @@ This skill must be invoked at the very beginning of every coding conversation �
 
 ## Rules
 
-1. Never skip this step. The cost of running repomix is low; the cost of duplicating existing code or breaking conventions is high.
-2. If `.claude/repomap.xml` already exists but is older than the current session, regenerate it.
-3. After reading the map, do NOT dump the full contents to the user. Internalize the knowledge silently and use it to inform your work.
-4. If repomix is not available or fails, fall back to using Glob and Grep to manually survey the repository structure.
+1. Never skip this step. The cost of exploring is low; the cost of duplicating existing code or breaking conventions is high.
+2. Prefer LSP tools over reading entire files — they give you structured, semantic information efficiently.
+3. After exploring, do NOT dump the full findings to the user. Internalize the knowledge silently and use it to inform your work.
+4. If LSP tools are not available, fall back to using Glob and Grep to manually survey the repository structure.
 
 ## Response Contract
 
 After running this skill:
 
-1. Confirm the repo map was generated (one line).
+1. Confirm the codebase was explored (one line).
 2. Summarize the project in 2-3 sentences: what it is, main technologies, key modules.
 3. Proceed with whatever the user actually asked for.
