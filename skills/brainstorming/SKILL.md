@@ -68,6 +68,7 @@ digraph brainstorming {
 
 **Understanding the idea:**
 
+- If a task description has already been provided in the conversation (e.g., text following a skill invocation like `/human-coder`), treat that as the initial idea. Do NOT ask the user to restate what they want to build — proceed directly to codebase exploration and ask only refinement questions about the already-stated task.
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec -> plan -> implementation cycle.
