@@ -21,7 +21,7 @@ vi.mock("grammy", () => {
   };
 });
 
-import { TelegramAdapter } from "./telegram.js";
+import { TelegramAdapter, COMMANDS } from "./telegram.js";
 import { Bot } from "grammy";
 
 describe("TelegramAdapter", () => {
@@ -187,6 +187,52 @@ describe("TelegramAdapter", () => {
       .value;
     expect(bot.api.closeForumTopic).toHaveBeenCalledWith(123, 99);
     expect(bot.api.deleteForumTopic).toHaveBeenCalledWith(123, 99);
+  });
+
+  it("registers /help command handler", () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
+    expect(bot.command).toHaveBeenCalledWith("help", expect.any(Function));
+  });
+
+  it("/help replies with all command names and descriptions", () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
+    const helpCall = bot.command.mock.calls.find((c: any[]) => c[0] === "help");
+    const helpHandler = helpCall?.[1];
+
+    const replyFn = vi.fn();
+    helpHandler({ reply: replyFn });
+
+    expect(replyFn).toHaveBeenCalledTimes(1);
+    const text = replyFn.mock.calls[0][0] as string;
+    for (const cmd of COMMANDS) {
+      expect(text).toContain(`/${cmd.command}`);
+      expect(text).toContain(cmd.description);
+    }
+  });
+
+  it("setMyCommands uses COMMANDS array", async () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
+    bot.api.setMyCommands = vi.fn().mockResolvedValue(true);
+    bot.start = vi.fn().mockResolvedValue(undefined);
+
+    await adapter.start();
+
+    expect(bot.api.setMyCommands).toHaveBeenCalledWith(COMMANDS);
   });
 
   it("deleteTopic continues to delete even if close fails", async () => {

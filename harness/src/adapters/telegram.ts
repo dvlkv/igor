@@ -5,6 +5,13 @@ import type {
   TaskAssignment,
 } from "../types.js";
 
+export const COMMANDS = [
+  { command: "task", description: "Create a new task — /task Title\\nDescription" },
+  { command: "done", description: "Complete a task — /done [taskId] or use in task thread" },
+  { command: "clear", description: "Clear and restart the general Claude session" },
+  { command: "help", description: "Show available commands" },
+];
+
 export interface PermissionPrompt {
   sessionId: string;
   requestId: string;
@@ -55,6 +62,11 @@ export class TelegramAdapter implements ChannelAdapter {
       for (const handler of this.taskCompletedHandlers) {
         handler(taskId, threadId);
       }
+    });
+
+    this.bot.command("help", (ctx) => {
+      const text = COMMANDS.map((c) => `/${c.command} — ${c.description}`).join("\n");
+      ctx.reply(text);
     });
 
     this.bot.command("task", (ctx) => {
@@ -234,20 +246,7 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   async start(): Promise<void> {
-    await this.bot.api.setMyCommands([
-      {
-        command: "task",
-        description: "Create a new task — /task Title\\nDescription",
-      },
-      {
-        command: "done",
-        description: "Complete a task — /done [taskId] or use in task thread",
-      },
-      {
-        command: "clear",
-        description: "Clear and restart the general Claude session",
-      },
-    ]);
+    await this.bot.api.setMyCommands(COMMANDS);
     await this.bot.start();
   }
 
