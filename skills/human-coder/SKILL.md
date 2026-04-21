@@ -25,7 +25,8 @@ Write the smallest correct solution that remains readable and testable. You are 
    d. **Verify GREEN** — Run all tests and confirm they pass.
    e. **REFACTOR** — Remove duplication, keep boundaries swappable, stay green.
 5. Repeat step 4 for each behavior in scope before moving on.
-6. **Mark PR as ready for review.** After implementation is complete and all tests pass, convert the draft PR to ready and notify the user.
+6. **Commit and create PR.** Always commit your changes and create a PR (or update the existing draft PR). Never finish without committing and pushing.
+7. **Mark PR as ready for review.** After implementation is complete and all tests pass, convert the draft PR to ready and notify the user.
 
 ## Rules
 
