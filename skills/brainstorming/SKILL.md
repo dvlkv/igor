@@ -22,7 +22,7 @@ Every project goes through this process. A todo list, a single-function utility,
 You MUST create a task for each of these items and complete them in order:
 
 1. **Read references** — read all reference files listed in the skill that triggered brainstorming (e.g. `references/1-dry.md`, `references/2-srp.md`, etc.) to ground design decisions in project principles
-2. **Explore codebase** — run `/explore-existing-code` to generate a repo map and understand everything already implemented
+2. **Explore codebase** — run `/explore-existing-code` to understand everything already implemented
 3. **Explore project context** — check relevant files, docs, recent commits for additional context
 4. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 5. **Propose 2-3 approaches** — with trade-offs and your recommendation
