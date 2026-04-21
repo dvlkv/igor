@@ -21,6 +21,13 @@ function createMockProcess() {
   proc.stdin = { writable: true, write: vi.fn() };
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
+  // Emit a readiness signal on next tick so createSession's await resolves
+  queueMicrotask(() => {
+    proc.stdout.emit(
+      "data",
+      Buffer.from(JSON.stringify({ type: "system", status: "ready" }) + "\n"),
+    );
+  });
   return proc;
 }
 

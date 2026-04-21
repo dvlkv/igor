@@ -71,6 +71,7 @@ describe("TelegramAdapter", () => {
       .value;
     expect(bot.api.sendMessage).toHaveBeenCalledWith(123, "Hello topic", {
       message_thread_id: 99,
+      parse_mode: "Markdown",
     });
   });
 
