@@ -197,6 +197,20 @@ export class TelegramAdapter implements ChannelAdapter {
     }
   }
 
+  async deleteTopic(threadId: string): Promise<void> {
+    const numericId = Number(threadId);
+    try {
+      await this.bot.api.closeForumTopic(this.config.ownerChatId, numericId);
+    } catch (err: any) {
+      console.log(`[telegram:closeTopic] ERROR: ${err.message}`);
+    }
+    try {
+      await this.bot.api.deleteForumTopic(this.config.ownerChatId, numericId);
+    } catch (err: any) {
+      console.log(`[telegram:deleteTopic] ERROR: ${err.message}`);
+    }
+  }
+
   async createThread(title: string): Promise<string> {
     const result = await this.bot.api.createForumTopic(
       this.config.ownerChatId,

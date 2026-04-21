@@ -120,6 +120,7 @@ function createMockTelegramAdapter() {
     sendPermissionPrompt: vi.fn().mockResolvedValue(undefined),
     editMessage: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
+    deleteTopic: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -600,6 +601,128 @@ describe("Orchestrator", () => {
       expect(telegramAdapter.sendMessage).toHaveBeenCalledWith(
         "thread-789",
         expect.stringContaining("kept"),
+      );
+    });
+
+    it("deletes telegram topic on task completion", async () => {
+      const mockTask: Task = {
+        taskId: "LIN-200",
+        projectName: "igor",
+        source: "linear",
+        title: "Topic test",
+        worktreePath: "/tmp/worktrees/LIN-200",
+        branch: "igor/LIN-200",
+        sessionId: "LIN-200",
+        telegramThreadId: "thread-200",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (_cmd: string, cb: Function) => {
+          cb(null, "  main\n", "");
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("LIN-200");
+
+      expect(telegramAdapter.deleteTopic).toHaveBeenCalledWith("thread-200");
+    });
+
+    it("skips topic deletion when no telegramThreadId", async () => {
+      const mockTask: Task = {
+        taskId: "GH-100",
+        projectName: "igor",
+        source: "github",
+        title: "No thread",
+        worktreePath: "/tmp/worktrees/GH-100",
+        branch: "igor/GH-100",
+        sessionId: "GH-100",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (_cmd: string, cb: Function) => {
+          cb(null, "  main\n", "");
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("GH-100");
+
+      expect(telegramAdapter.deleteTopic).not.toHaveBeenCalled();
+    });
+
+    it("completes task even if topic deletion fails", async () => {
+      const mockTask: Task = {
+        taskId: "LIN-300",
+        projectName: "igor",
+        source: "linear",
+        title: "Delete fails",
+        worktreePath: "/tmp/worktrees/LIN-300",
+        branch: "igor/LIN-300",
+        sessionId: "LIN-300",
+        telegramThreadId: "thread-300",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+      (telegramAdapter.deleteTopic as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("delete failed"),
+      );
+
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (_cmd: string, cb: Function) => {
+          cb(null, "  main\n", "");
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      await orchestrator.completeTask("LIN-300");
+
+      expect(taskStore.update).toHaveBeenCalledWith(
+        "LIN-300",
+        expect.objectContaining({ status: "completed" }),
       );
     });
   });

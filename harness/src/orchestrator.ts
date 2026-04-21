@@ -316,7 +316,17 @@ export class Orchestrator {
       }
     }
 
-    // 7. Clean up internal maps
+    // 7. Delete Telegram topic
+    if (this.telegram?.deleteTopic && task.telegramThreadId) {
+      try {
+        await this.telegram.deleteTopic(task.telegramThreadId);
+        console.log(`[cleanup] deleted topic "${task.telegramThreadId}"`);
+      } catch (err: any) {
+        console.log(`[cleanup] topic delete failed: ${err.message}`);
+      }
+    }
+
+    // 8. Clean up internal maps
     this.replyContext.delete(task.sessionId);
     this.progressMessages.delete(task.sessionId);
 
