@@ -11,6 +11,8 @@ vi.mock("grammy", () => {
       editMessageText: vi.fn().mockResolvedValue(true),
       deleteMessage: vi.fn().mockResolvedValue(true),
       createForumTopic: vi.fn().mockResolvedValue({ message_thread_id: 99, name: "Test" }),
+      closeForumTopic: vi.fn().mockResolvedValue(true),
+      deleteForumTopic: vi.fn().mockResolvedValue(true),
     },
   };
   return {
@@ -172,5 +174,38 @@ describe("TelegramAdapter", () => {
     });
 
     expect(completedThreads).toEqual(["456"]);
+  });
+
+  it("deleteTopic calls closeForumTopic then deleteForumTopic", async () => {
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+    await adapter.deleteTopic("99");
+
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      .value;
+    expect(bot.api.closeForumTopic).toHaveBeenCalledWith(123, 99);
+    expect(bot.api.deleteForumTopic).toHaveBeenCalledWith(123, 99);
+  });
+
+  it("deleteTopic continues to delete even if close fails", async () => {
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results[0]
+      ?.value;
+
+    const adapter = new TelegramAdapter({
+      botToken: "test-token",
+      ownerChatId: 123,
+    });
+
+    const botInstance = (Bot as unknown as ReturnType<typeof vi.fn>).mock
+      .results.at(-1)!.value;
+    botInstance.api.closeForumTopic.mockRejectedValueOnce(
+      new Error("topic already closed"),
+    );
+
+    await adapter.deleteTopic("99");
+
+    expect(botInstance.api.deleteForumTopic).toHaveBeenCalledWith(123, 99);
   });
 });
