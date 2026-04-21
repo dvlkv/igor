@@ -179,6 +179,57 @@ describe("Orchestrator", () => {
     expect(savedTask.linearIssueUrl).toBe("https://linear.app/issue/LIN-123");
   });
 
+  it("includes title in session prompt", async () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, linearAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    linearAdapter.fireTask({
+      source: "linear",
+      taskId: "LIN-200",
+      title: "Fix the login bug",
+      description: "",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const sessionCall = (sessionManager.createSession as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sessionCall.prompt).toContain("Fix the login bug");
+  });
+
+  it("includes both title and description in session prompt", async () => {
+    const orchestrator = new Orchestrator({
+      adapters: [telegramAdapter, linearAdapter],
+      telegram: telegramAdapter as any,
+      taskStore,
+      sessionManager,
+      memoryIngestion,
+      worktreeDir: "/tmp/worktrees",
+      generalProjectDir: "/tmp/project",
+      generalClaudeArgs: [],
+    });
+
+    linearAdapter.fireTask({
+      source: "linear",
+      taskId: "LIN-201",
+      title: "Fix the login bug",
+      description: "Users cannot log in after password reset",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    const sessionCall = (sessionManager.createSession as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sessionCall.prompt).toContain("Fix the login bug");
+    expect(sessionCall.prompt).toContain("Users cannot log in after password reset");
+  });
+
   it("routes telegram message to session via stdin", async () => {
     const mockTask: Task = {
       taskId: "LIN-123",
