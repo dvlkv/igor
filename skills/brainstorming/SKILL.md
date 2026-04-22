@@ -131,7 +131,11 @@ After the spec is committed, create a Draft PR with the spec as the PR body:
 3. Report the PR link to the user
 
 **User Review Gate:**
-After the Draft PR is created, report the link and proceed directly to implementation. Do not wait for explicit approval — the user will interrupt if changes are needed.
+After the Draft PR is created, ask the user to review the spec before proceeding:
+
+> "Draft PR created: `<url>`. Please review the spec and let me know if you want to make any changes before we start writing the implementation plan."
+
+Wait for the user's response. If they request changes, make them, push, and re-run the spec review loop. Only proceed once the user approves.
 
 **Implementation:**
 
