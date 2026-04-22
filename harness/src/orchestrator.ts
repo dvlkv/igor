@@ -56,6 +56,21 @@ export class Orchestrator {
     string,
     { threadId: string; messageId: number }
   >();
+  private pendingQuestions = new Map<string, {
+    questions: Array<{
+      questionText: string;
+      options: Array<{ label: string; description: string }>;
+      multiSelect: boolean;
+      questionId: string;
+      messageId?: number;
+      selectedOptions: Set<number>;
+      waitingForFreeText: boolean;
+    }>;
+    answers: Map<number, string>;
+    threadId: string;
+  }>();
+  private questionIdCounter = 0;
+  private questionIdToSession = new Map<string, { sessionId: string; questionIndex: number }>();
 
   constructor(opts: OrchestratorOptions) {
     this.adapters = opts.adapters;
@@ -101,6 +116,12 @@ export class Orchestrator {
     this.sessionManager.onAssistantText((sessionId, text) => {
       void this.handleAssistantText(sessionId, text);
     });
+
+    if (this.telegram) {
+      this.telegram.onQuestionAnswer((questionId: string, answer: string) => {
+        this.handleQuestionAnswer(questionId, answer);
+      });
+    }
 
     if (this.telegram) {
       this.telegram.onTaskCompleted(
@@ -330,6 +351,15 @@ export class Orchestrator {
     this.replyContext.delete(task.sessionId);
     this.progressMessages.delete(task.sessionId);
 
+    // 8b. Clean up pending questions
+    const pendingQ = this.pendingQuestions.get(task.sessionId);
+    if (pendingQ) {
+      for (const q of pendingQ.questions) {
+        this.questionIdToSession.delete(q.questionId);
+      }
+      this.pendingQuestions.delete(task.sessionId);
+    }
+
     console.log(`[cleanup] task "${taskId}" completed`);
   }
 
@@ -360,6 +390,20 @@ export class Orchestrator {
         adapter: "telegram",
         threadId: msg.threadId,
       });
+
+      // Check if there's a pending question waiting for free-text
+      const pending = this.pendingQuestions.get(targetSession);
+      if (pending) {
+        const waitingIdx = pending.questions.findIndex(
+          (q) => q.waitingForFreeText,
+        );
+        if (waitingIdx >= 0) {
+          pending.questions[waitingIdx].waitingForFreeText = false;
+          pending.answers.set(waitingIdx, msg.text);
+          this.tryCompletePendingQuestions(targetSession);
+          return;
+        }
+      }
 
       void this.ensureSessionAlive(targetSession).then(() => {
         console.log(
@@ -423,6 +467,11 @@ export class Orchestrator {
     toolName: string,
     input: Record<string, unknown>,
   ): Promise<void> {
+    if (toolName === "AskUserQuestion") {
+      await this.handleAskUserQuestion(sessionId, input);
+      return;
+    }
+
     const ctx = this.replyContext.get(sessionId);
     if (!ctx || !this.telegram) return;
 
@@ -451,6 +500,142 @@ export class Orchestrator {
         });
       }
     }
+  }
+
+  private async handleAskUserQuestion(
+    sessionId: string,
+    input: Record<string, unknown>,
+  ): Promise<void> {
+    const ctx = this.replyContext.get(sessionId);
+    if (!ctx || !this.telegram) return;
+
+    const questions = input.questions as Array<{
+      question: string;
+      header: string;
+      multiSelect: boolean;
+      options: Array<{ label: string; description: string }>;
+    }>;
+
+    if (!questions?.length) return;
+
+    // Delete existing progress message
+    const existing = this.progressMessages.get(sessionId);
+    if (existing && this.telegram.deleteMessage) {
+      void this.telegram.deleteMessage(existing.messageId);
+      this.progressMessages.delete(sessionId);
+    }
+
+    const pendingSet: {
+      questions: Array<{
+        questionText: string;
+        options: Array<{ label: string; description: string }>;
+        multiSelect: boolean;
+        questionId: string;
+        messageId?: number;
+        selectedOptions: Set<number>;
+        waitingForFreeText: boolean;
+      }>;
+      answers: Map<number, string>;
+      threadId: string;
+    } = {
+      questions: [],
+      answers: new Map<number, string>(),
+      threadId: ctx.threadId,
+    };
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      const questionId = `q${this.questionIdCounter++}`;
+
+      this.questionIdToSession.set(questionId, {
+        sessionId,
+        questionIndex: i,
+      });
+
+      const messageId = await this.telegram.sendQuestion(
+        ctx.threadId,
+        q.question,
+        q.options,
+        questionId,
+        q.multiSelect,
+      );
+
+      pendingSet.questions.push({
+        questionText: q.question,
+        options: q.options,
+        multiSelect: q.multiSelect,
+        questionId,
+        messageId,
+        selectedOptions: new Set(),
+        waitingForFreeText: false,
+      });
+    }
+
+    this.pendingQuestions.set(sessionId, pendingSet);
+  }
+
+  private handleQuestionAnswer(questionId: string, answer: string): void {
+    const mapping = this.questionIdToSession.get(questionId);
+    if (!mapping) return;
+
+    const { sessionId, questionIndex } = mapping;
+    const pending = this.pendingQuestions.get(sessionId);
+    if (!pending) return;
+
+    const question = pending.questions[questionIndex];
+    if (!question) return;
+
+    if (answer === "__other__") {
+      question.waitingForFreeText = true;
+      return;
+    }
+
+    if (answer === "__done__") {
+      const labels = [...question.selectedOptions]
+        .sort()
+        .map((i) => question.options[i]?.label)
+        .filter(Boolean);
+      pending.answers.set(questionIndex, labels.join(", "));
+    } else if (question.multiSelect) {
+      const idx = parseInt(answer, 10);
+      if (question.selectedOptions.has(idx)) {
+        question.selectedOptions.delete(idx);
+      } else {
+        question.selectedOptions.add(idx);
+      }
+      return;
+    } else {
+      const idx = parseInt(answer, 10);
+      const label = question.options[idx]?.label ?? answer;
+      pending.answers.set(questionIndex, label);
+    }
+
+    this.tryCompletePendingQuestions(sessionId);
+  }
+
+  private tryCompletePendingQuestions(sessionId: string): void {
+    const pending = this.pendingQuestions.get(sessionId);
+    if (!pending) return;
+
+    if (pending.answers.size < pending.questions.length) return;
+
+    const lines: string[] = [];
+    for (let i = 0; i < pending.questions.length; i++) {
+      const q = pending.questions[i];
+      const a = pending.answers.get(i) ?? "";
+      if (pending.questions.length === 1) {
+        lines.push(a);
+      } else {
+        lines.push(`${q.questionText}: ${a}`);
+      }
+    }
+
+    this.sessionManager.sendMessage(sessionId, lines.join("\n"));
+
+    for (const q of pending.questions) {
+      this.questionIdToSession.delete(q.questionId);
+    }
+    this.pendingQuestions.delete(sessionId);
   }
 
   private formatToolInput(

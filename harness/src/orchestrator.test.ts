@@ -117,7 +117,9 @@ function createMockTelegramAdapter() {
     onClear: vi.fn(),
     onPermissionResponse: vi.fn(),
     onTaskCompleted: vi.fn(),
+    onQuestionAnswer: vi.fn(),
     sendPermissionPrompt: vi.fn().mockResolvedValue(undefined),
+    sendQuestion: vi.fn().mockResolvedValue(200),
     editMessage: vi.fn().mockResolvedValue(undefined),
     deleteMessage: vi.fn().mockResolvedValue(undefined),
     deleteTopic: vi.fn().mockResolvedValue(undefined),
@@ -879,6 +881,409 @@ describe("Orchestrator", () => {
       "dvlkv/igor#50",
       expect.objectContaining({ status: "completed" }),
     );
+  });
+
+  describe("AskUserQuestion", () => {
+    it("sends questions to telegram when AskUserQuestion tool_use detected", async () => {
+      let toolUseCallback:
+        | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
+        | undefined;
+
+      (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
+          toolUseCallback = handler;
+        },
+      );
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      // Set reply context
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "general",
+        text: "Hello",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Simulate AskUserQuestion tool_use
+      toolUseCallback!("igor-general", "AskUserQuestion", {
+        questions: [
+          {
+            question: "Which library?",
+            header: "Library",
+            multiSelect: false,
+            options: [
+              { label: "React", description: "UI library" },
+              { label: "Vue", description: "Progressive framework" },
+            ],
+          },
+        ],
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(telegramAdapter.sendQuestion).toHaveBeenCalledWith(
+        "general",
+        "Which library?",
+        [
+          { label: "React", description: "UI library" },
+          { label: "Vue", description: "Progressive framework" },
+        ],
+        expect.any(String),
+        false,
+      );
+    });
+
+    it("sends answer back to Claude when button tapped", async () => {
+      let toolUseCallback:
+        | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
+        | undefined;
+      let questionAnswerHandler:
+        | ((questionId: string, answer: string) => void)
+        | undefined;
+
+      (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
+          toolUseCallback = handler;
+        },
+      );
+      (telegramAdapter.onQuestionAnswer as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (questionId: string, answer: string) => void) => {
+          questionAnswerHandler = handler;
+        },
+      );
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      // Set reply context
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "general",
+        text: "Hello",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Simulate AskUserQuestion
+      toolUseCallback!("igor-general", "AskUserQuestion", {
+        questions: [
+          {
+            question: "Which library?",
+            header: "Library",
+            multiSelect: false,
+            options: [
+              { label: "React", description: "UI library" },
+              { label: "Vue", description: "Progressive framework" },
+            ],
+          },
+        ],
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Get the questionId that was used
+      const questionId = (telegramAdapter.sendQuestion as ReturnType<typeof vi.fn>)
+        .mock.calls[0][3];
+
+      // Simulate user tapping "Vue" (option index 1)
+      questionAnswerHandler!(questionId, "1");
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Should send answer back to Claude
+      expect(sessionManager.sendMessage).toHaveBeenCalledWith(
+        "igor-general",
+        expect.stringContaining("Vue"),
+      );
+    });
+
+    it("intercepts free-text as Other answer when questions are pending", async () => {
+      let toolUseCallback:
+        | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
+        | undefined;
+      let questionAnswerHandler:
+        | ((questionId: string, answer: string) => void)
+        | undefined;
+
+      (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
+          toolUseCallback = handler;
+        },
+      );
+      (telegramAdapter.onQuestionAnswer as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (questionId: string, answer: string) => void) => {
+          questionAnswerHandler = handler;
+        },
+      );
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      // Set reply context
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "general",
+        text: "Hello",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Simulate AskUserQuestion
+      toolUseCallback!("igor-general", "AskUserQuestion", {
+        questions: [
+          {
+            question: "Which library?",
+            header: "Library",
+            multiSelect: false,
+            options: [
+              { label: "React", description: "UI library" },
+              { label: "Vue", description: "Progressive framework" },
+            ],
+          },
+        ],
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Get the questionId
+      const questionId = (telegramAdapter.sendQuestion as ReturnType<typeof vi.fn>)
+        .mock.calls[0][3];
+
+      // User clicks "Other..."
+      questionAnswerHandler!(questionId, "__other__");
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Clear sendMessage mock to isolate the next call
+      (sessionManager.sendMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      // User types free-text answer
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "general",
+        text: "Svelte actually",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Should send the free-text as the answer, NOT as a regular message
+      expect(sessionManager.sendMessage).toHaveBeenCalledWith(
+        "igor-general",
+        expect.stringContaining("Svelte actually"),
+      );
+    });
+
+    it("handles multiple questions and waits for all answers", async () => {
+      let toolUseCallback:
+        | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
+        | undefined;
+      let questionAnswerHandler:
+        | ((questionId: string, answer: string) => void)
+        | undefined;
+
+      (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
+          toolUseCallback = handler;
+        },
+      );
+      (telegramAdapter.onQuestionAnswer as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (questionId: string, answer: string) => void) => {
+          questionAnswerHandler = handler;
+        },
+      );
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      // Set reply context
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "general",
+        text: "Hello",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Simulate AskUserQuestion with 2 questions
+      toolUseCallback!("igor-general", "AskUserQuestion", {
+        questions: [
+          {
+            question: "Which library?",
+            header: "Library",
+            multiSelect: false,
+            options: [
+              { label: "React", description: "UI library" },
+              { label: "Vue", description: "Progressive framework" },
+            ],
+          },
+          {
+            question: "Which style?",
+            header: "Style",
+            multiSelect: false,
+            options: [
+              { label: "Tailwind", description: "Utility-first CSS" },
+              { label: "CSS Modules", description: "Scoped CSS" },
+            ],
+          },
+        ],
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(telegramAdapter.sendQuestion).toHaveBeenCalledTimes(2);
+
+      const questionId0 = (telegramAdapter.sendQuestion as ReturnType<typeof vi.fn>)
+        .mock.calls[0][3];
+      const questionId1 = (telegramAdapter.sendQuestion as ReturnType<typeof vi.fn>)
+        .mock.calls[1][3];
+
+      // Clear mock before testing partial answer behavior
+      (sessionManager.sendMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      // Answer first question only — should NOT send to Claude yet
+      questionAnswerHandler!(questionId0, "0");
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(sessionManager.sendMessage).not.toHaveBeenCalledWith(
+        "igor-general",
+        expect.any(String),
+      );
+
+      // Answer second question — NOW should send combined response
+      (sessionManager.sendMessage as ReturnType<typeof vi.fn>).mockClear();
+      questionAnswerHandler!(questionId1, "1");
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(sessionManager.sendMessage).toHaveBeenCalledWith(
+        "igor-general",
+        expect.stringContaining("React"),
+      );
+      expect(sessionManager.sendMessage).toHaveBeenCalledWith(
+        "igor-general",
+        expect.stringContaining("CSS Modules"),
+      );
+    });
+
+    it("cleans up pending questions when task completes", async () => {
+      let toolUseCallback:
+        | ((sessionId: string, toolName: string, input: Record<string, unknown>) => void)
+        | undefined;
+
+      (sessionManager.onToolUse as ReturnType<typeof vi.fn>).mockImplementation(
+        (handler: (sessionId: string, toolName: string, input: Record<string, unknown>) => void) => {
+          toolUseCallback = handler;
+        },
+      );
+
+      const mockTask: Task = {
+        taskId: "LIN-500",
+        projectName: "igor",
+        source: "linear",
+        title: "Test cleanup",
+        worktreePath: "/tmp/worktrees/LIN-500",
+        branch: "igor/LIN-500",
+        sessionId: "LIN-500",
+        telegramThreadId: "thread-500",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      (taskStore.get as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+      (sessionManager.isAlive as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      const { exec } = await import("node:child_process");
+      (exec as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        (_cmd: string, cb: Function) => {
+          cb(null, "  main\n", "");
+        },
+      );
+
+      const orchestrator = new Orchestrator({
+        adapters: [telegramAdapter],
+        telegram: telegramAdapter as any,
+        taskStore,
+        sessionManager,
+        memoryIngestion,
+        worktreeDir: "/tmp/worktrees",
+        generalProjectDir: "/tmp/project",
+        generalClaudeArgs: [],
+      });
+
+      // Set reply context for task session using findByTelegramThread
+      (taskStore.findByTelegramThread as ReturnType<typeof vi.fn>).mockReturnValue(mockTask);
+      telegramAdapter.fireMessage({
+        channelType: "telegram",
+        threadId: "thread-500",
+        text: "Hello",
+        author: "user",
+        metadata: { chat_id: "320784056" },
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Simulate AskUserQuestion on task session
+      toolUseCallback!("LIN-500", "AskUserQuestion", {
+        questions: [
+          {
+            question: "Which approach?",
+            header: "Approach",
+            multiSelect: false,
+            options: [
+              { label: "A", description: "Option A" },
+              { label: "B", description: "Option B" },
+            ],
+          },
+        ],
+      });
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Complete the task — should not crash even with pending questions
+      await orchestrator.completeTask("LIN-500");
+
+      expect(taskStore.update).toHaveBeenCalledWith(
+        "LIN-500",
+        expect.objectContaining({ status: "completed" }),
+      );
+    });
   });
 
   it("resolves task from thread when /done has no argument", async () => {
