@@ -4,3 +4,6 @@
 [submodule "submodules/superpowers"]
 	path = submodules/superpowers
 	url = git@github.com:obra/superpowers.git
+[submodule "submodules/ralphex"]
+	path = submodules/ralphex
+	url = git@github.com:umputun/ralphex.git
