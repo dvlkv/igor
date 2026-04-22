@@ -8,6 +8,7 @@ describe("toolDisplayName", () => {
     expect(toolDisplayName("Grep")).toBe("Searching codebase");
     expect(toolDisplayName("Edit")).toBe("Editing files");
     expect(toolDisplayName("Agent")).toBe("Running subagent");
+    expect(toolDisplayName("AskUserQuestion")).toBe("Asking a question");
   });
 
   it("returns 'Working' for unknown tools", () => {
