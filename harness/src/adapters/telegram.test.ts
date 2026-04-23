@@ -47,7 +47,7 @@ describe("TelegramAdapter", () => {
     const threadId = await adapter.createThread("Test Thread");
     expect(threadId).toBe("99");
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.createForumTopic).toHaveBeenCalledWith(123, "Test Thread");
   });
@@ -60,7 +60,7 @@ describe("TelegramAdapter", () => {
     const longTitle = "A".repeat(200);
     await adapter.createThread(longTitle);
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.createForumTopic).toHaveBeenCalledWith(
       123,
@@ -75,7 +75,7 @@ describe("TelegramAdapter", () => {
     });
     await adapter.sendMessage("99", "Hello topic");
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.sendMessage).toHaveBeenCalledWith(123, "Hello topic", {
       message_thread_id: 99,
@@ -99,7 +99,7 @@ describe("TelegramAdapter", () => {
     });
     await adapter.editMessage("general", 42, "Updated text");
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.editMessageText).toHaveBeenCalledWith(
       123,
@@ -116,7 +116,7 @@ describe("TelegramAdapter", () => {
     });
     await adapter.deleteMessage(42);
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.deleteMessage).toHaveBeenCalledWith(123, 42);
   });
@@ -127,7 +127,7 @@ describe("TelegramAdapter", () => {
       ownerChatId: 123,
     });
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.command).toHaveBeenCalledWith("done", expect.any(Function));
   });
@@ -141,7 +141,7 @@ describe("TelegramAdapter", () => {
     const completedTasks: (string | undefined)[] = [];
     adapter.onTaskCompleted((taskId) => completedTasks.push(taskId));
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     const lastDoneCall = bot.command.mock.calls
       .reverse()
@@ -167,7 +167,7 @@ describe("TelegramAdapter", () => {
       completedThreads.push(threadId ?? ""),
     );
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     const lastDoneCall = bot.command.mock.calls
       .reverse()
@@ -189,7 +189,7 @@ describe("TelegramAdapter", () => {
     });
     await adapter.deleteTopic("99");
 
-    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)
+    const bot = (Bot as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)!
       .value;
     expect(bot.api.closeForumTopic).toHaveBeenCalledWith(123, 99);
     expect(bot.api.deleteForumTopic).toHaveBeenCalledWith(123, 99);
