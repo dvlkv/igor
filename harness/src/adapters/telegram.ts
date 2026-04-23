@@ -6,7 +6,7 @@ import type {
 } from "../types.js";
 
 export const COMMANDS = [
-  { command: "task", description: "Create a new task — /task Title\\nDescription" },
+  { command: "task", description: "Create a new task — /task <title>" },
   { command: "done", description: "Complete a task — /done [taskId] or use in task thread" },
   { command: "clear", description: "Clear and restart the general Claude session" },
   { command: "help", description: "Show available commands" },
