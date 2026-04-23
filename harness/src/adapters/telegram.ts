@@ -40,6 +40,10 @@ export class TelegramAdapter implements ChannelAdapter {
     requestId: string,
     behavior: "allow" | "deny",
   ) => void;
+  private questionAnswerHandler?: (
+    questionId: string,
+    answer: string,
+  ) => void;
 
   constructor(config: TelegramConfig) {
     this.config = config;
@@ -90,6 +94,32 @@ export class TelegramAdapter implements ChannelAdapter {
     // Handle permission relay callback queries
     this.bot.on("callback_query:data", async (ctx) => {
       const data = ctx.callbackQuery.data;
+
+      if (data.startsWith("q:")) {
+        // Format: q:<questionId>:<optionIndex>
+        const parts = data.split(":");
+        if (parts.length === 3) {
+          const [, questionId, optionIndex] = parts;
+          this.questionAnswerHandler?.(questionId, optionIndex);
+          await ctx.answerCallbackQuery({ text: "Selected" });
+        }
+        return;
+      }
+      if (data.startsWith("qd:")) {
+        // Format: qd:<questionId> (multi-select done)
+        const questionId = data.slice(3);
+        this.questionAnswerHandler?.(questionId, "__done__");
+        await ctx.answerCallbackQuery({ text: "Confirmed" });
+        return;
+      }
+      if (data.startsWith("qo:")) {
+        // Format: qo:<questionId> (other / free-text)
+        const questionId = data.slice(3);
+        this.questionAnswerHandler?.(questionId, "__other__");
+        await ctx.answerCallbackQuery({ text: "Reply with your answer" });
+        return;
+      }
+
       if (!data.startsWith("perm:")) return;
 
       // Format: perm:<allow|deny>:<sessionId>:<requestId>
@@ -157,6 +187,55 @@ export class TelegramAdapter implements ChannelAdapter {
     ) => void,
   ): void {
     this.permissionResponseHandler = handler;
+  }
+
+  onQuestionAnswer(
+    handler: (questionId: string, answer: string) => void,
+  ): void {
+    this.questionAnswerHandler = handler;
+  }
+
+  async sendQuestion(
+    threadId: string,
+    questionText: string,
+    options: Array<{ label: string; description: string }>,
+    questionId: string,
+    multiSelect: boolean,
+  ): Promise<number | undefined> {
+    const optionLines = options
+      .map((o) => `• *${o.label}* — ${o.description}`)
+      .join("\n");
+    const text = `❓ *${questionText}*\n\n${optionLines}`;
+
+    const keyboard = new InlineKeyboard();
+    for (let i = 0; i < options.length; i++) {
+      keyboard.text(options[i].label, `q:${questionId}:${i}`);
+      if (i < options.length - 1) keyboard.row();
+    }
+    if (multiSelect) {
+      keyboard.row();
+      keyboard.text("✅ Done", `qd:${questionId}`);
+    }
+    keyboard.row();
+    keyboard.text("Other...", `qo:${questionId}`);
+
+    const numericMatch = /(\d+)$/.exec(threadId);
+    const opts: Record<string, unknown> =
+      threadId !== "general" && numericMatch
+        ? { message_thread_id: Number(numericMatch[1]), parse_mode: "Markdown", reply_markup: keyboard }
+        : { parse_mode: "Markdown", reply_markup: keyboard };
+
+    try {
+      const result = await this.bot.api.sendMessage(
+        this.config.ownerChatId,
+        text,
+        opts,
+      );
+      return result.message_id;
+    } catch (err: any) {
+      console.log(`[telegram:sendQuestion] ERROR: ${err.message}`);
+      return undefined;
+    }
   }
 
   async sendMessage(

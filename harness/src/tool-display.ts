@@ -10,6 +10,7 @@ export function toolDisplayName(toolName: string): string {
     WebSearch: "Searching the web",
     WebFetch: "Fetching page",
     Agent: "Running subagent",
+    AskUserQuestion: "Asking a question",
   };
   return map[toolName] ?? "Working";
 }
